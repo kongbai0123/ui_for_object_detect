@@ -1,0 +1,9 @@
+[
+    {
+        "project_name": "DefaultProject",
+        "input_path": "C:\\yolo",
+        "output_path": "C:\\yolo\\runs",
+        "classes": [],
+        "task_type": "Detection"
+    }
+]
