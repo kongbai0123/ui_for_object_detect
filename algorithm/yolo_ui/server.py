@@ -23,6 +23,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_no_cache_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith(("/css/", "/js/")):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 # 掛載 UI 靜態資源與首頁路由
 ui_path = Path(__file__).parent.resolve()
 app.mount("/css", StaticFiles(directory=str(ui_path / "css")), name="css")
@@ -1157,4 +1166,3 @@ def read_logs():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
-
