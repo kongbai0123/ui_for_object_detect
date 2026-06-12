@@ -15,6 +15,8 @@ const App = {
 
     // 訓練輪詢 Timer
     trainTimer: null,
+    backendHeartbeatTimer: null,
+    lastExplorerStatsError: "",
 
     el(id) {
         return document.getElementById(id);
@@ -154,6 +156,9 @@ const App = {
         // 1. 初始化頁面導航
         this.safeSetup("setupNavigation", () => this.setupNavigation());
 
+        // 1.2. 維持本機後端服務存活
+        this.safeSetup("setupBackendHeartbeat", () => this.setupBackendHeartbeat());
+
         // 1.5. 初始化主題
         this.safeSetup("initTheme", () => this.initTheme());
 
@@ -174,6 +179,22 @@ const App = {
 
         // 7. 檢查本機是否有啟用中的專案
         this.safeSetup("checkExistingProject", () => this.checkExistingProject());
+    },
+
+    setupBackendHeartbeat() {
+        const sendHeartbeat = async () => {
+            try {
+                await fetch(`${API_BASE}/api/heartbeat`, { cache: "no-store" });
+            } catch (err) {
+                console.warn("[HEARTBEAT] Backend heartbeat failed:", err);
+            }
+        };
+
+        sendHeartbeat();
+        if (this.backendHeartbeatTimer) {
+            clearInterval(this.backendHeartbeatTimer);
+        }
+        this.backendHeartbeatTimer = setInterval(sendHeartbeat, 10000);
     },
 
     initTheme() {
@@ -2234,7 +2255,18 @@ const App = {
             this.renderExplorerGallery("all");
 
         } catch (e) {
-            showToast("資料集載入統計失敗", "error");
+            console.error("[EXPLORER] Dataset stats load failed:", e);
+            const reason = e && e.message ? e.message : "請確認後端服務是否仍在執行";
+            const message = `資料集載入統計失敗：${reason}`;
+            if (this.lastExplorerStatsError !== message) {
+                showToast(message, "error");
+                this.lastExplorerStatsError = message;
+                setTimeout(() => {
+                    if (this.lastExplorerStatsError === message) {
+                        this.lastExplorerStatsError = "";
+                    }
+                }, 5000);
+            }
         }
     },
 
