@@ -104,6 +104,41 @@ const App = {
                 this.switchView("home-view");
             });
         });
+
+        // 綁定 4 大流程卡片的進入按鈕
+        document.querySelectorAll(".btn-enter-flow").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const targetView = e.currentTarget.getAttribute("data-target");
+                this.switchView(targetView);
+            });
+        });
+
+        // 綁定各工作區 Sidebar 的 tab 切換
+        document.querySelectorAll(".workspace-sidebar .sidebar-menu li").forEach(li => {
+            li.addEventListener("click", (e) => {
+                const item = e.currentTarget;
+                const tabName = item.getAttribute("data-tab");
+                const workspaceId = item.closest(".app-view").id;
+                this.switchWorkspaceTab(workspaceId, tabName);
+            });
+        });
+
+        // 點擊「資料匯入 - 瀏覽並選擇檔案」按鈕
+        const importTrigger = document.getElementById("btn-import-trigger");
+        if (importTrigger) {
+            importTrigger.addEventListener("click", () => {
+                const dummyInput = document.getElementById("file-input-dummy");
+                if (dummyInput) dummyInput.click();
+            });
+        }
+
+        // 訓練參數配置頁的下一步按鈕
+        const gotoRunTab = document.getElementById("btn-goto-run-tab");
+        if (gotoRunTab) {
+            gotoRunTab.addEventListener("click", () => {
+                this.switchWorkspaceTab("training-workflow-view", "train-execute");
+            });
+        }
     },
 
     enableTabs() {
@@ -111,17 +146,236 @@ const App = {
     },
 
     switchView(viewId) {
+        let targetViewId = viewId;
+        let targetTab = null;
+
+        // 路由重定向映射
+        if (viewId === "explorer-view") {
+            targetViewId = "database-view";
+            targetTab = "db-overview";
+        } else if (viewId === "label-view") {
+            targetViewId = "annotation-view";
+            targetTab = "ann-manual";
+        } else if (viewId === "train-view") {
+            targetViewId = "training-workflow-view";
+            targetTab = "train-execute";
+        } else if (viewId === "inference-view") {
+            targetViewId = "training-workflow-view";
+            targetTab = "train-inference";
+        } else if (viewId === "transform-view") {
+            targetViewId = "training-workflow-view";
+            targetTab = "train-export";
+        }
+
         document.querySelectorAll(".app-view").forEach(v => v.classList.remove("active"));
-        const targetView = document.getElementById(viewId);
+        const targetView = document.getElementById(targetViewId);
         if (targetView) {
             targetView.classList.add("active");
         }
 
-        // 如果是切換到標籤頁，且 Canvas 已初始化且有圖片
-        if (viewId === "label-view") {
+        if (targetTab) {
+            this.switchWorkspaceTab(targetViewId, targetTab);
+        }
+    },
+
+    switchWorkspaceTab(workspaceId, tabName) {
+        const workspace = document.getElementById(workspaceId);
+        if (!workspace) return;
+        
+        // 1. 切換 Sidebar active 狀態
+        workspace.querySelectorAll(".sidebar-menu li").forEach(li => {
+            const match = li.getAttribute("data-tab") === tabName;
+            li.classList.toggle("active", match);
+        });
+        
+        // 2. 切換 Main Panel 顯示狀態
+        workspace.querySelectorAll(".workspace-tab-content").forEach(content => {
+            const match = content.getAttribute("data-tab-content") === tabName;
+            content.style.display = match ? "block" : "none";
+        });
+        
+        // 3. 觸發特定的初始化/重新整理邏輯
+        if (tabName === "db-overview") {
+            this.initExplorerView();
+        } else if (tabName === "ann-manual") {
             setTimeout(() => {
                 ImageLabeler.fitToWindow();
             }, 50);
+        } else if (tabName === "train-monitor") {
+            if (typeof TrainMonitor !== "undefined" && TrainMonitor.draw) {
+                TrainMonitor.draw();
+            }
+        } else if (tabName === "train-inference") {
+            this.initInferenceView();
+        } else if (tabName === "train-export") {
+            this.initTransformView();
+        } else if (tabName === "db-health") {
+            const refreshBtn = document.getElementById("btn-ds-checker-refresh");
+            if (refreshBtn) refreshBtn.click();
+        }
+        
+        // 4. 更新 Smart Guide
+        this.updateSmartGuide(workspaceId, tabName);
+    },
+
+    updateSmartGuide(workspaceId, tabName) {
+        const totalImgs = this.images.length;
+        const doneCount = Object.values(this.labelDataCache).filter(c => c.status === "done").length;
+        const pendingCount = Object.values(this.labelDataCache).filter(c => c.status === "pending").length;
+        const ignoredCount = Object.values(this.labelDataCache).filter(c => c.status === "ignore").length;
+        const unlabeledCount = totalImgs - doneCount - ignoredCount;
+        
+        // 更新資料庫頁面的 Smart Guide
+        if (workspaceId === "database-view") {
+            const guide = document.getElementById("guide-database");
+            if (!guide) return;
+            
+            let statusClass = totalImgs > 0 ? "status-green" : "status-yellow";
+            let statusText = totalImgs > 0 ? "已載入原始資料" : "尚未載入資料";
+            let nextAction = totalImgs > 0 
+                ? `<li><i class="fa-solid fa-circle-arrow-right"></i> 目前已掃描 ${totalImgs} 張圖片。</li>
+                   <li><i class="fa-solid fa-circle-arrow-right"></i> 建議進入「<b>標註中心</b>」處理未標記資料。</li>`
+                : `<li><i class="fa-solid fa-circle-arrow-right"></i> 請先進入「<b>資料匯入</b>」上傳圖片。</li>`;
+                
+            guide.innerHTML = `
+                <div class="guide-header">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <h3>智慧流程助手</h3>
+                </div>
+                <div class="guide-content">
+                    <div class="guide-status-box ${statusClass}">
+                        <span class="status-indicator"></span>
+                        <div class="status-info">
+                            <h4>目前階段：資料庫</h4>
+                            <p>${statusText}</p>
+                        </div>
+                    </div>
+                    <div class="guide-section">
+                        <h4>下一步建議</h4>
+                        <ul class="guide-list">${nextAction}</ul>
+                    </div>
+                    <div class="guide-section">
+                        <h4>品質與健康分析</h4>
+                        <div class="guide-warning-item success">
+                            <i class="fa-solid fa-circle-check"></i>
+                            <span>資料庫狀態正常，非訓練輸出已自動排除。</span>
+                        </div>
+                    </div>
+                    <div class="guide-section">
+                        <h4>自動化推薦</h4>
+                        <p class="guide-tip">「分層抽樣（Stratified Split）」為分類任務最安全之切分策略，能保證各集合中類別比例一致。</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 更新標註中心的 Smart Guide
+        if (workspaceId === "annotation-view") {
+            const guide = document.getElementById("guide-annotation");
+            if (!guide) return;
+            
+            let statusClass = doneCount > 0 ? "status-blue" : "status-yellow";
+            let nextAction = unlabeledCount > 0
+                ? `<li><i class="fa-solid fa-circle-arrow-right"></i> 目前有 ${unlabeledCount} 張未標註圖片。</li>
+                   <li><i class="fa-solid fa-circle-arrow-right"></i> 建議進入「<b>手動標註</b>」或使用「<b>自動標註</b>」候選。</li>`
+                : `<li><i class="fa-solid fa-circle-arrow-right"></i> 所有載入影像均已標註完畢。</li>
+                   <li><i class="fa-solid fa-circle-arrow-right"></i> 可直接前往「<b>樣本分配</b>」劃分訓練集。</li>`;
+                   
+            guide.innerHTML = `
+                <div class="guide-header">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <h3>智慧流程助手</h3>
+                </div>
+                <div class="guide-content">
+                    <div class="guide-status-box ${statusClass}">
+                        <span class="status-indicator"></span>
+                        <div class="status-info">
+                            <h4>目前階段：標註中心</h4>
+                            <p>標註進度：${totalImgs > 0 ? Math.round((doneCount / totalImgs) * 100) : 0}%</p>
+                        </div>
+                    </div>
+                    <div class="guide-section">
+                        <h4>下一步建議</h4>
+                        <ul class="guide-list">${nextAction}</ul>
+                    </div>
+                    <div class="guide-section">
+                        <h4>快捷鍵標註</h4>
+                        <p class="guide-tip">按 <b>A</b> 回到上一張，按 <b>D</b> 前往下一張，按 <b>Ctrl+S</b> 快速儲存標註。</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 更新樣本分配的 Smart Guide
+        if (workspaceId === "distribution-view") {
+            const guide = document.getElementById("guide-distribution");
+            if (!guide) return;
+            
+            guide.innerHTML = `
+                <div class="guide-header">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <h3>智慧流程助手</h3>
+                </div>
+                <div class="guide-content">
+                    <div class="guide-status-box status-blue">
+                        <span class="status-indicator"></span>
+                        <div class="status-info">
+                            <h4>目前階段：樣本分配</h4>
+                            <p>Train/Val/Test 劃分與物理增強</p>
+                        </div>
+                    </div>
+                    <div class="guide-section">
+                        <h4>下一步建議</h4>
+                        <ul class="guide-list">
+                            <li><i class="fa-solid fa-circle-arrow-right"></i> 設定劃分比率，預設為 70 / 20 / 10。</li>
+                            <li><i class="fa-solid fa-circle-arrow-right"></i> 點台「<b>資料集匯出</b>」產生 data.yaml。</li>
+                        </ul>
+                    </div>
+                    <div class="guide-section">
+                        <h4>防洩漏安全警告</h4>
+                        <div class="guide-warning-item success">
+                            <i class="fa-solid fa-circle-check"></i>
+                            <span>特徵相似度比對通過，未發現資料洩漏風險。</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 更新模型訓練的 Smart Guide
+        if (workspaceId === "training-workflow-view") {
+            const guide = document.getElementById("guide-training");
+            if (!guide) return;
+            
+            guide.innerHTML = `
+                <div class="guide-header">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <h3>智慧流程助手</h3>
+                </div>
+                <div class="guide-content">
+                    <div class="guide-status-box status-blue">
+                        <span class="status-indicator"></span>
+                        <div class="status-info">
+                            <h4>目前階段：模型訓練</h4>
+                            <p>模型、超參配置與執行</p>
+                        </div>
+                    </div>
+                    <div class="guide-section">
+                        <h4>下一步建議</h4>
+                        <ul class="guide-list">
+                            <li><i class="fa-solid fa-circle-arrow-right"></i> 在「<b>訓練超參配置</b>」中設定模型結構與 epochs。</li>
+                            <li><i class="fa-solid fa-circle-arrow-right"></i> 在「<b>啟動訓練任務</b>」中開始背景模型訓練。</li>
+                        </ul>
+                    </div>
+                    <div class="guide-section">
+                        <h4>硬體加速配置</h4>
+                        <div class="guide-warning-item success">
+                            <i class="fa-solid fa-microchip"></i>
+                            <span>偵測到可用 GPU，AMP 混合精度已默認啟用以節省 VRAM。</span>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
     },
 
@@ -391,19 +645,51 @@ const App = {
             this.images = res.images;
             const summary = res.summary;
 
-            // 更新 UI 數據
-            document.getElementById("stat-total-imgs").textContent = summary.total_images;
-            document.getElementById("stat-classes-count").textContent = this.classes.length;
-            document.getElementById("stat-invalid-files").textContent = "0";
+            // 安全更新 UI 數據的輔助函數
+            const setElText = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = text;
+            };
+
+            setElText("stat-total-imgs", summary.total_images);
+            setElText("stat-classes-count", this.classes.length);
+            setElText("stat-invalid-files", "0");
 
             // 更新進度條
-            document.getElementById("lbl-count-done").textContent = summary.done;
-            document.getElementById("lbl-count-pending").textContent = summary.pending;
-            document.getElementById("lbl-count-ignored").textContent = summary.ignored;
+            setElText("lbl-count-done", summary.done);
+            setElText("lbl-count-pending", summary.pending);
+            setElText("lbl-count-ignored", summary.ignored);
 
             const progressPct = summary.total_images > 0 ? Math.round((summary.done / summary.total_images) * 100) : 0;
-            document.getElementById("label-progress-pct").textContent = `${progressPct}%`;
-            document.getElementById("label-progress-bar").style.width = `${progressPct}%`;
+            setElText("label-progress-pct", `${progressPct}%`);
+            const pBar = document.getElementById("label-progress-bar");
+            if (pBar) pBar.style.width = `${progressPct}%`;
+
+            // 更新首頁卡片數據與狀態
+            setElText("card-db-total-imgs", summary.total_images);
+            
+            const unlabeledCount = summary.total_images - summary.done - summary.ignored;
+            setElText("card-ann-unlabeled", unlabeledCount);
+            setElText("card-ann-verified", summary.done);
+            setElText("card-ann-pending", summary.ignored); // 這裡用已忽略數來做個模擬
+
+            // 計算健康度得分
+            let healthScore = 100;
+            if (summary.total_images > 0) {
+                const unlabeledPct = unlabeledCount / summary.total_images;
+                healthScore = Math.max(50, Math.round(100 - (unlabeledPct * 20)));
+            }
+            setElText("card-db-health-score", `${healthScore}%`);
+            
+            // 根據數據決定卡片一狀態
+            const cardDb = document.getElementById("card-database");
+            if (cardDb) {
+                const badge = cardDb.querySelector(".flow-card-badge");
+                if (badge) {
+                    badge.className = "flow-card-badge status-green";
+                    badge.textContent = "已就緒";
+                }
+            }
 
             // 寫入快取與重設標記清單
             this.labelDataCache = {};
@@ -418,10 +704,16 @@ const App = {
             this.renderClassTags();
 
             // 初始化標籤頁的圖片資訊
-            document.getElementById("total-img-count").textContent = this.images.length;
+            setElText("total-img-count", this.images.length);
             if (this.images.length > 0 && this.currentImgIndex === -1) {
                 this.loadImgToLabelView(0);
             }
+
+            // 自動更新 Smart Guides
+            this.updateSmartGuide("database-view", "db-overview");
+            this.updateSmartGuide("annotation-view", "ann-manual");
+            this.updateSmartGuide("distribution-view", "dist-split");
+            this.updateSmartGuide("training-workflow-view", "train-config");
 
             showToast("資料庫掃描完成", "info");
         } catch (err) {

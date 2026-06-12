@@ -141,3 +141,7 @@ runs/
 # Ignore temporary files created by inference
 temp_inference.jpg
 **/temp_inference.jpg
+
+# Backup files
+*.bak
+**/*.bak
