@@ -16,30 +16,164 @@ const App = {
     // 訓練輪詢 Timer
     trainTimer: null,
 
+    el(id) {
+        return document.getElementById(id);
+    },
+
+    on(id, event, handler, options = {}) {
+        const el = this.el(id);
+        if (!el) {
+            console.warn(`[DOM-MISSING] #${id} not found, skip ${event} binding.`);
+            return false;
+        }
+        el.addEventListener(event, handler, options);
+        return true;
+    },
+
+    text(id, value) {
+        const el = this.el(id);
+        if (!el) {
+            console.warn(`[DOM-MISSING] #${id} not found, skip text update.`);
+            return false;
+        }
+        el.textContent = value;
+        return true;
+    },
+
+    html(id, value) {
+        const el = this.el(id);
+        if (!el) {
+            console.warn(`[DOM-MISSING] #${id} not found, skip html update.`);
+            return false;
+        }
+        el.innerHTML = value;
+        return true;
+    },
+
+    value(id, value) {
+        const el = this.el(id);
+        if (!el) {
+            console.warn(`[DOM-MISSING] #${id} not found, skip value update.`);
+            return false;
+        }
+        el.value = value;
+        return true;
+    },
+
+    show(id) {
+        const el = this.el(id);
+        if (!el) {
+            console.warn(`[DOM-MISSING] #${id} not found, skip show.`);
+            return false;
+        }
+        el.style.display = "block";
+        return true;
+    },
+
+    hide(id) {
+        const el = this.el(id);
+        if (!el) {
+            console.warn(`[DOM-MISSING] #${id} not found, skip hide.`);
+            return false;
+        }
+        el.style.display = "none";
+        return true;
+    },
+
+    activateModal(id) {
+        const el = this.el(id);
+        if (!el) {
+            console.warn(`[DOM-MISSING] modal #${id} not found.`);
+            return false;
+        }
+        el.classList.add("active");
+        return true;
+    },
+
+    closeModal(id) {
+        const el = this.el(id);
+        if (!el) return false;
+        el.classList.remove("active");
+        return true;
+    },
+
+    validateDomContract() {
+        const required = [
+            "home-view",
+            "database-view",
+            "annotation-view",
+            "distribution-view",
+            "training-workflow-view",
+            "active-project-badge",
+            "label-canvas",
+            "canvas-container-div"
+        ];
+
+        const optional = [
+            "btn-scan-data",
+            "btn-clear-data",
+            "btn-start-train",
+            "btn-export-dataset",
+            "log-viewer-modal",
+            "project-manager-modal",
+            "env-check-modal"
+        ];
+
+        const missingRequired = required.filter(id => !document.getElementById(id));
+        const missingOptional = optional.filter(id => !document.getElementById(id));
+
+        if (missingRequired.length > 0) {
+            console.error("[DOM-CONTRACT] Missing required DOM:", missingRequired);
+            if (typeof showToast === "function") {
+                showToast(`缺少必要 DOM：${missingRequired.join(", ")}`, "error");
+            }
+            return false;
+        }
+
+        if (missingOptional.length > 0) {
+            console.warn("[DOM-CONTRACT] Missing optional DOM:", missingOptional);
+        }
+
+        return true;
+    },
+
+    safeSetup(name, fn) {
+        try {
+            fn();
+        } catch (err) {
+            console.error(`[INIT-ERROR] ${name} failed:`, err);
+            if (typeof showToast === "function") {
+                showToast(`${name} 初始化失敗，請查看 Console`, "error");
+            }
+        }
+    },
+
     init() {
+        this.validateDomContract();
+
         // 1. 初始化頁面導航
-        this.setupNavigation();
+        this.safeSetup("setupNavigation", () => this.setupNavigation());
 
         // 1.5. 初始化主題
-        this.initTheme();
+        this.safeSetup("initTheme", () => this.initTheme());
 
         // 2. 初始化專案對話框
-        this.setupProjectModals();
+        this.safeSetup("setupProjectModals", () => this.setupProjectModals());
 
         // 3. 初始化資料頁面事件
-        this.setupDataPageEvents();
+        this.safeSetup("setupDataPageEvents", () => this.setupDataPageEvents());
 
         // 4. 初始化標籤頁面事件
-        this.setupLabelPageEvents();
+        this.safeSetup("setupLabelPageEvents", () => this.setupLabelPageEvents());
 
         // 5. 初始化訓練設定與聯動
-        this.setupTrainPageEvents();
+        this.safeSetup("setupTrainPageEvents", () => this.setupTrainPageEvents());
 
         // 6. 綁定鍵盤快捷鍵
-        this.setupKeyboardShortcuts();
+        this.safeSetup("setupKeyboardShortcuts", () => this.setupKeyboardShortcuts());
 
         // 7. 檢查本機是否有啟用中的專案
-        this.checkExistingProject();
+        this.safeSetup("checkExistingProject", () => this.checkExistingProject());
     },
 
     initTheme() {
@@ -479,25 +613,27 @@ const App = {
 
     onProjectLoaded(project) {
         this.projectLoaded = true;
-        this.projectName = project.project_name;
-        this.inputPath = project.input_path;
-        this.classes = project.classes;
+        this.projectName = project.project_name || "DefaultProject";
+        this.inputPath = project.input_path || "C:/yolo";
+        this.classes = project.classes || [];
 
         // 更新 UI 頂部與 Badge
-        document.getElementById("active-project-badge").innerHTML = `
+        this.html("active-project-badge", `
             <span class="dot active"></span> Project: ${this.projectName}
-        `;
-        document.getElementById("input-path-display").value = this.inputPath;
-        document.getElementById("output-path-display").value = project.output_path;
+        `);
+        this.value("input-path-display", this.inputPath);
+        this.value("output-path-display", project.output_path || `${this.inputPath}/runs`);
+        this.value("label-input-path-display", this.inputPath);
         
-        const labelInputDisplay = document.getElementById("label-input-path-display");
-        if (labelInputDisplay) {
-            labelInputDisplay.value = this.inputPath;
-        }
+        const canvas = this.el("label-canvas");
+        const canvasContainer = this.el("canvas-container-div");
 
-        // 初始化 Canvas 標記器與類別顏色
-        ImageLabeler.init("label-canvas", "canvas-container-div");
-        ImageLabeler.setClassColors(this.classes);
+        if (canvas && canvasContainer && window.ImageLabeler) {
+            ImageLabeler.init("label-canvas", "canvas-container-div");
+            ImageLabeler.setClassColors(this.classes);
+        } else {
+            console.warn("[DOM-MISSING] label canvas not found, skip ImageLabeler.init.");
+        }
 
         // 啟用導航
         this.enableTabs();
@@ -510,11 +646,11 @@ const App = {
     // 01. 資料頁面
     // ==========================================================================
     setupDataPageEvents() {
-        document.getElementById("btn-scan-data").addEventListener("click", () => this.scanDataset());
-        document.getElementById("btn-clear-data").addEventListener("click", () => this.clearDataset());
+        this.on("btn-scan-data", "click", () => this.scanDataset());
+        this.on("btn-clear-data", "click", () => this.clearDataset());
 
         // Train 頁面的類別新增按鈕
-        document.getElementById("btn-train-add-class").addEventListener("click", () => {
+        this.on("btn-train-add-class", "click", () => {
             const newCls = prompt("請輸入新增類別名稱：");
             if (newCls && newCls.trim()) {
                 const cleanCls = newCls.trim().toLowerCase();
@@ -523,7 +659,9 @@ const App = {
                     return;
                 }
                 this.classes.push(cleanCls);
-                ImageLabeler.setClassColors(this.classes);
+                if (typeof ImageLabeler !== "undefined" && ImageLabeler.setClassColors) {
+                    ImageLabeler.setClassColors(this.classes);
+                }
                 this.renderClassTags();
                 this.updateClassSelectorList();
                 showToast(`已新增類別: ${cleanCls}`, "success");
@@ -531,15 +669,15 @@ const App = {
         });
 
         // 資料頁面中的資料夾選擇按鈕 (點選可直接切換工作區，並連動 Output)
-        document.getElementById("btn-data-choose-dir").addEventListener("click", async () => {
+        this.on("btn-data-choose-dir", "click", async () => {
             try {
                 const res = await API.chooseDirectory();
                 if (res.status === "success" && res.path) {
                     const path = res.path;
                     const outPath = path + "/runs";
 
-                    document.getElementById("input-path-display").value = path;
-                    document.getElementById("output-path-display").value = outPath;
+                    this.value("input-path-display", path);
+                    this.value("output-path-display", outPath);
 
                     showToast(`正在載入新工作目錄: ${path}`, "info");
                     const resLoad = await fetch(`${API_BASE}/api/project/create`, {
@@ -563,12 +701,12 @@ const App = {
         });
 
         // 資料頁面中的 Output 資料夾選擇按鈕 (自訂 Output 目錄)
-        document.getElementById("btn-data-choose-output-dir").addEventListener("click", async () => {
+        this.on("btn-data-choose-output-dir", "click", async () => {
             try {
                 const res = await API.chooseDirectory();
                 if (res.status === "success" && res.path) {
                     const outPath = res.path;
-                    document.getElementById("output-path-display").value = outPath;
+                    this.value("output-path-display", outPath);
 
                     if (this.projectLoaded) {
                         showToast(`正在更新輸出目錄為: ${outPath}`, "info");
@@ -596,8 +734,11 @@ const App = {
         // 監聽手動編輯 input_path / output_path
         const syncManualPaths = async () => {
             if (!this.projectLoaded) return;
-            const inPath = document.getElementById("input-path-display").value.trim();
-            const outPath = document.getElementById("output-path-display").value.trim();
+            const inputEl = this.el("input-path-display");
+            const outputEl = this.el("output-path-display");
+            if (!inputEl || !outputEl) return;
+            const inPath = inputEl.value.trim();
+            const outPath = outputEl.value.trim();
             if (!inPath || !outPath) return;
 
             try {
@@ -615,26 +756,28 @@ const App = {
             syncTimeout = setTimeout(syncManualPaths, 500);
         };
 
-        document.getElementById("input-path-display").addEventListener("change", syncManualPaths);
-        document.getElementById("output-path-display").addEventListener("change", syncManualPaths);
-        document.getElementById("output-path-display").addEventListener("input", syncManualPathsDebounced);
-        document.getElementById("output-path-display").addEventListener("blur", syncManualPaths);
+        this.on("input-path-display", "change", syncManualPaths);
+        this.on("output-path-display", "change", syncManualPaths);
+        this.on("output-path-display", "input", syncManualPathsDebounced);
+        this.on("output-path-display", "blur", syncManualPaths);
 
         // 拖曳上傳
-        const dragArea = document.getElementById("drag-area");
-        dragArea.addEventListener("dragover", (e) => {
-            e.preventDefault();
-            dragArea.classList.add("drag-over");
-        });
-        dragArea.addEventListener("dragleave", () => {
-            dragArea.classList.remove("drag-over");
-        });
-        dragArea.addEventListener("drop", (e) => {
-            e.preventDefault();
-            dragArea.classList.remove("drag-over");
-            showToast("拖曳匯入完成 (ZIP 自動解壓並重新掃描)", "success");
-            this.scanDataset();
-        });
+        const dragArea = this.el("drag-area");
+        if (dragArea) {
+            dragArea.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                dragArea.classList.add("drag-over");
+            });
+            dragArea.addEventListener("dragleave", () => {
+                dragArea.classList.remove("drag-over");
+            });
+            dragArea.addEventListener("drop", (e) => {
+                e.preventDefault();
+                dragArea.classList.remove("drag-over");
+                showToast("拖曳匯入完成 (ZIP 自動解壓並重新掃描)", "success");
+                this.scanDataset();
+            });
+        }
     },
 
     async scanDataset() {
@@ -763,37 +906,56 @@ const App = {
     // ==========================================================================
     setupLabelPageEvents() {
         // 工具列模式選擇
-        document.getElementById("tool-select").addEventListener("click", () => this.setLabelToolMode("select"));
-        document.getElementById("tool-bbox").addEventListener("click", () => this.setLabelToolMode("draw"));
+        this.on("tool-select", "click", () => this.setLabelToolMode("select"));
+        this.on("tool-bbox", "click", () => this.setLabelToolMode("draw"));
 
         // 畫布縮放與輔助按鈕
-        document.getElementById("tool-zoom-in").addEventListener("click", () => {
-            ImageLabeler.scale *= 1.25;
-            ImageLabeler.draw();
+        this.on("tool-zoom-in", "click", () => {
+            if (typeof ImageLabeler !== "undefined") {
+                ImageLabeler.scale *= 1.25;
+                ImageLabeler.draw();
+            }
         });
-        document.getElementById("tool-zoom-out").addEventListener("click", () => {
-            ImageLabeler.scale *= 0.8;
-            ImageLabeler.draw();
+        this.on("tool-zoom-out", "click", () => {
+            if (typeof ImageLabeler !== "undefined") {
+                ImageLabeler.scale *= 0.8;
+                ImageLabeler.draw();
+            }
         });
-        document.getElementById("tool-zoom-fit").addEventListener("click", () => ImageLabeler.fitToWindow());
-        document.getElementById("tool-zoom-orig").addEventListener("click", () => ImageLabeler.resetZoom());
+        this.on("tool-zoom-fit", "click", () => {
+            if (typeof ImageLabeler !== "undefined" && ImageLabeler.fitToWindow) {
+                ImageLabeler.fitToWindow();
+            }
+        });
+        this.on("tool-zoom-orig", "click", () => {
+            if (typeof ImageLabeler !== "undefined" && ImageLabeler.resetZoom) {
+                ImageLabeler.resetZoom();
+            }
+        });
 
         // 刪除與清空
-        document.getElementById("tool-clear-box").addEventListener("click", () => ImageLabeler.deleteSelectedBox());
-        document.getElementById("tool-copy-prev").addEventListener("click", () => this.copyPreviousAnnotations());
+        this.on("tool-clear-box", "click", () => {
+            if (typeof ImageLabeler !== "undefined" && ImageLabeler.deleteSelectedBox) {
+                ImageLabeler.deleteSelectedBox();
+            }
+        });
+        this.on("tool-copy-prev", "click", () => this.copyPreviousAnnotations());
 
         // 忽略 / 待確認標記
-        document.getElementById("tool-ignore").addEventListener("click", () => this.setCurrentImageStatus("ignore"));
-        document.getElementById("tool-pending").addEventListener("click", () => this.setCurrentImageStatus("pending"));
+        this.on("tool-ignore", "click", () => this.setCurrentImageStatus("ignore"));
+        this.on("tool-pending", "click", () => this.setCurrentImageStatus("pending"));
 
         // 上下一張與儲存
-        document.getElementById("btn-prev-img").addEventListener("click", () => this.navigateImages(-1));
-        document.getElementById("btn-next-img").addEventListener("click", () => this.navigateImages(1));
-        document.getElementById("btn-save-labels").addEventListener("click", () => this.saveAllLabelsToBackend());
-        document.getElementById("btn-goto-train").addEventListener("click", () => this.switchView("train-view"));
+        this.on("btn-prev-img", "click", () => this.navigateImages(-1));
+        this.on("btn-next-img", "click", () => this.navigateImages(1));
+        this.on("btn-save-labels", "click", () => this.saveAllLabelsToBackend());
+        this.on("btn-goto-train", "click", () => {
+            this.switchView("distribution-view");
+            this.switchWorkspaceTab("distribution-view", "dist-split");
+        });
 
         // 新增類別
-        document.getElementById("btn-add-class").addEventListener("click", () => {
+        this.on("btn-add-class", "click", () => {
             const newCls = prompt("請輸入新增類別名稱：");
             if (newCls && newCls.trim()) {
                 const cleanCls = newCls.trim().toLowerCase();
@@ -802,33 +964,34 @@ const App = {
                     return;
                 }
                 this.classes.push(cleanCls);
-                ImageLabeler.setClassColors(this.classes);
+                if (typeof ImageLabeler !== "undefined" && ImageLabeler.setClassColors) {
+                    ImageLabeler.setClassColors(this.classes);
+                }
                 this.updateClassSelectorList();
                 showToast(`已新增類別: ${cleanCls}`, "success");
             }
         });
 
         // 綁定標籤頁資料匯入 Modal 顯示與隱藏
-        const modal = document.getElementById("label-import-modal");
-        document.getElementById("btn-label-import-modal").addEventListener("click", () => {
-            document.getElementById("label-input-path-display").value = this.inputPath;
-            modal.classList.add("active");
+        this.on("btn-label-import-modal", "click", () => {
+            this.value("label-input-path-display", this.inputPath);
+            this.activateModal("label-import-modal");
         });
-        document.getElementById("btn-label-import-close").addEventListener("click", () => {
-            modal.classList.remove("active");
+        this.on("btn-label-import-close", "click", () => {
+            this.closeModal("label-import-modal");
         });
 
         // 選擇資料夾按鈕
-        document.getElementById("btn-label-choose-dir").addEventListener("click", async () => {
+        this.on("btn-label-choose-dir", "click", async () => {
             try {
                 const res = await API.chooseDirectory();
                 if (res.status === "success" && res.path) {
                     const path = res.path;
                     const outPath = path + "/runs";
 
-                    document.getElementById("label-input-path-display").value = path;
-                    document.getElementById("input-path-display").value = path;
-                    document.getElementById("output-path-display").value = outPath;
+                    this.value("label-input-path-display", path);
+                    this.value("input-path-display", path);
+                    this.value("output-path-display", outPath);
 
                     showToast(`正在載入新工作區: ${path}`, "info");
                     const resLoad = await fetch(`${API_BASE}/api/project/create`, {
@@ -852,29 +1015,31 @@ const App = {
         });
 
         // 拖曳上傳
-        const labelDragArea = document.getElementById("label-drag-area");
-        labelDragArea.addEventListener("dragover", (e) => {
-            e.preventDefault();
-            labelDragArea.classList.add("drag-over");
-        });
-        labelDragArea.addEventListener("dragleave", () => {
-            labelDragArea.classList.remove("drag-over");
-        });
-        labelDragArea.addEventListener("drop", (e) => {
-            e.preventDefault();
-            labelDragArea.classList.remove("drag-over");
-            showToast("拖曳匯入完成 (ZIP 自動解壓並重新掃描)", "success");
-            this.scanDataset();
-        });
+        const labelDragArea = this.el("label-drag-area");
+        if (labelDragArea) {
+            labelDragArea.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                labelDragArea.classList.add("drag-over");
+            });
+            labelDragArea.addEventListener("dragleave", () => {
+                labelDragArea.classList.remove("drag-over");
+            });
+            labelDragArea.addEventListener("drop", (e) => {
+                e.preventDefault();
+                labelDragArea.classList.remove("drag-over");
+                showToast("拖曳匯入完成 (ZIP 自動解壓並重新掃描)", "success");
+                this.scanDataset();
+            });
+        }
 
         // 掃描與清除
-        document.getElementById("btn-label-scan-data").addEventListener("click", () => {
+        this.on("btn-label-scan-data", "click", () => {
             this.scanDataset();
-            modal.classList.remove("active");
+            this.closeModal("label-import-modal");
         });
-        document.getElementById("btn-label-clear-data").addEventListener("click", () => {
+        this.on("btn-label-clear-data", "click", () => {
             this.clearDataset();
-            modal.classList.remove("active");
+            this.closeModal("label-import-modal");
         });
     },
 
@@ -1086,68 +1251,70 @@ const App = {
     // ==========================================================================
     setupTrainPageEvents() {
         // 資料切分比例聯動
-        const sTrain = document.getElementById("slider-train");
-        const sVal = document.getElementById("slider-val");
-        const sTest = document.getElementById("slider-test");
+        const sTrain = this.el("slider-split-train");
+        const sVal = this.el("slider-split-val");
+        const sTest = this.el("slider-split-test");
 
-        const updateSplitLabels = () => {
-            const vTrain = parseInt(sTrain.value);
-            const vVal = parseInt(sVal.value);
-            const vTest = parseInt(sTest.value);
+        if (sTrain && sVal && sTest) {
+            const updateSplitLabels = () => {
+                const vTrain = parseInt(sTrain.value);
+                const vVal = parseInt(sVal.value);
+                const vTest = parseInt(sTest.value);
 
-            document.getElementById("val-train-pct").textContent = vTrain;
-            document.getElementById("val-val-pct").textContent = vVal;
-            document.getElementById("val-test-pct").textContent = vTest;
+                this.text("lbl-split-train", `${vTrain}%`);
+                this.text("lbl-split-val", `${vVal}%`);
+                this.text("lbl-split-test", `${vTest}%`);
 
-            const total = vTrain + vVal + vTest;
-            const badge = document.getElementById("split-total-badge");
-            badge.textContent = `總和: ${total}%`;
+                const total = vTrain + vVal + vTest;
+                const status = this.el("split-total-status");
+                if (status) {
+                    status.textContent = `總計: ${total}%`;
+                    status.className = total !== 100 ? "badge bg-danger" : "badge bg-success";
+                }
+            };
 
-            if (total !== 100) {
-                badge.className = "slider-total-hint error";
-            } else {
-                badge.className = "slider-total-hint";
-            }
-        };
+            sTrain.addEventListener("input", (e) => {
+                const val = parseInt(e.target.value);
+                const remain = 100 - val;
+                const sumVT = parseInt(sVal.value) + parseInt(sTest.value) || 1;
+                const ratioVal = parseInt(sVal.value) / sumVT;
 
-        sTrain.addEventListener("input", (e) => {
-            const val = parseInt(e.target.value);
-            // 當 Train 改變，等比例縮放 Val 與 Test
-            const remain = 100 - val;
-            const sumVT = parseInt(sVal.value) + parseInt(sTest.value) || 1;
-            const ratioVal = parseInt(sVal.value) / sumVT;
+                sVal.value = Math.round(remain * ratioVal);
+                sTest.value = 100 - val - parseInt(sVal.value);
+                updateSplitLabels();
+            });
 
-            sVal.value = Math.round(remain * ratioVal);
-            sTest.value = 100 - val - parseInt(sVal.value);
+            sVal.addEventListener("input", (e) => {
+                const val = parseInt(e.target.value);
+                const remain = 100 - val;
+                const sumTT = parseInt(sTrain.value) + parseInt(sTest.value) || 1;
+                const ratioTrain = parseInt(sTrain.value) / sumTT;
+
+                sTrain.value = Math.round(remain * ratioTrain);
+                sTest.value = 100 - val - parseInt(sTrain.value);
+                updateSplitLabels();
+            });
+
+            sTest.addEventListener("input", (e) => {
+                const val = parseInt(e.target.value);
+                const remain = 100 - val;
+                const sumTV = parseInt(sTrain.value) + parseInt(sVal.value) || 1;
+                const ratioTrain = parseInt(sTrain.value) / sumTV;
+
+                sTrain.value = Math.round(remain * ratioTrain);
+                sVal.value = 100 - val - parseInt(sTrain.value);
+                updateSplitLabels();
+            });
+
             updateSplitLabels();
-        });
-
-        sVal.addEventListener("input", (e) => {
-            const val = parseInt(e.target.value);
-            const remain = 100 - val;
-            const sumTT = parseInt(sTrain.value) + parseInt(sTest.value) || 1;
-            const ratioTrain = parseInt(sTrain.value) / sumTT;
-
-            sTrain.value = Math.round(remain * ratioTrain);
-            sTest.value = 100 - val - parseInt(sTrain.value);
-            updateSplitLabels();
-        });
-
-        sTest.addEventListener("input", (e) => {
-            const val = parseInt(e.target.value);
-            const remain = 100 - val;
-            const sumTV = parseInt(sTrain.value) + parseInt(sVal.value) || 1;
-            const ratioTrain = parseInt(sTrain.value) / sumTV;
-
-            sTrain.value = Math.round(remain * ratioTrain);
-            sVal.value = 100 - val - parseInt(sTrain.value);
-            updateSplitLabels();
-        });
+        } else {
+            console.warn("[DOM-MISSING] split sliders not found, skip split ratio binding.");
+        }
 
         // 資料增強 Preset (含說明面板連動)
         const presetBtns = document.querySelectorAll("[data-preset]");
-        const customAugPanel = document.getElementById("custom-aug-panel");
-        const presetDescPanel = document.getElementById("aug-preset-desc");
+        const customAugPanel = this.el("custom-aug-panel");
+        const presetDescPanel = this.el("aug-preset-desc");
 
         // 定義各 Preset 的增強項目說明
         const presetConfigs = {
@@ -1213,59 +1380,60 @@ const App = {
             presetDescPanel.style.display = "block";
         };
 
-        presetBtns.forEach(btn => {
-            btn.addEventListener("click", () => {
-                presetBtns.forEach(b => b.classList.remove("active"));
-                btn.classList.add("active");
+        if (presetBtns.length > 0) {
+            presetBtns.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    presetBtns.forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
 
-                const preset = btn.getAttribute("data-preset");
-                if (preset === "custom") {
-                    customAugPanel.style.display = "block";
-                    if (presetDescPanel) presetDescPanel.style.display = "none";
-                } else {
-                    customAugPanel.style.display = "none";
-                    updatePresetDesc(preset);
+                    const preset = btn.getAttribute("data-preset");
+                    if (preset === "custom") {
+                        if (customAugPanel) customAugPanel.style.display = "block";
+                        if (presetDescPanel) presetDescPanel.style.display = "none";
+                    } else {
+                        if (customAugPanel) customAugPanel.style.display = "none";
+                        updatePresetDesc(preset);
 
-                    // 根據預設自動勾選所有 checkbox
-                    const cfg = presetConfigs[preset];
-                    if (cfg) {
-                        Object.entries(cfg.checks).forEach(([key, val]) => {
-                            const el = document.getElementById(`aug-${key}`);
-                            if (el) el.checked = val;
-                        });
+                        // 根據預設自動勾選所有 checkbox
+                        const cfg = presetConfigs[preset];
+                        if (cfg) {
+                            Object.entries(cfg.checks).forEach(([key, val]) => {
+                                const el = this.el(`aug-${key}`);
+                                if (el) el.checked = val;
+                            });
+                        }
                     }
-                }
+                });
             });
-        });
+        }
 
         // 檢查訓練資料對話框
-        const precheckModal = document.getElementById("precheck-modal");
-        document.getElementById("btn-pre-check").addEventListener("click", () => {
+        this.on("btn-pre-check", "click", () => {
             this.runTrainingPrecheck();
         });
 
-        document.getElementById("btn-precheck-close").addEventListener("click", () => precheckModal.classList.remove("active"));
-        document.getElementById("btn-precheck-back").addEventListener("click", () => precheckModal.classList.remove("active"));
+        this.on("btn-precheck-close", "click", () => this.closeModal("precheck-modal"));
+        this.on("btn-precheck-back", "click", () => this.closeModal("precheck-modal"));
 
-        document.getElementById("btn-precheck-start").addEventListener("click", () => {
-            precheckModal.classList.remove("active");
+        this.on("btn-precheck-start", "click", () => {
+            this.closeModal("precheck-modal");
             this.startModelTraining();
         });
 
         // 開始訓練按鈕
-        document.getElementById("btn-start-train").addEventListener("click", () => {
+        this.on("btn-start-train", "click", () => {
             this.startModelTraining();
         });
 
         // 停止訓練與資料夾
-        document.getElementById("btn-stop-train").addEventListener("click", async () => {
+        this.on("btn-stop-train", "click", async () => {
             try {
                 await API.stopTrain();
                 showToast("已送出終止訓練請求", "warn");
             } catch (e) { }
         });
 
-        document.getElementById("btn-open-runs-folder").addEventListener("click", async () => {
+        this.on("btn-open-runs-folder", "click", async () => {
             showToast("正在本機檔案管理員開啟 runs 資料夾...", "info");
             try {
                 const res = await fetch(`${API_BASE}/api/project/open_output_folder`);
@@ -2423,599 +2591,36 @@ const App = {
     // ==========================================================================
     // 資料集健康度檢測 Modal
     // ==========================================================================
-    async openDatasetCheckerModal() {
-        const modal = document.getElementById("ds-checker-modal");
-        if (!modal) return;
-
-        const closeBtn = document.getElementById("btn-ds-checker-close");
-        const closeHandler = () => {
-            modal.classList.remove("active");
-            closeBtn.removeEventListener("click", closeHandler);
-        };
-        closeBtn.addEventListener("click", closeHandler);
-
-        document.getElementById("btn-ds-checker-refresh").onclick = () => this.runDatasetChecker();
-
-        await this.runDatasetChecker();
-        modal.classList.add("active");
+    openDatasetCheckerModal() {
+        this.switchView("database-view");
+        this.switchWorkspaceTab("database-view", "db-health");
     },
 
-    async runDatasetChecker() {
-        try {
-            showToast("正在分析影像與標籤完整性...", "info");
-            const data = await API.checkDataset();
-
-            // 1. 健康評分環
-            const score = data.health_score;
-            document.getElementById("ds-health-score-val").textContent = score;
-            const ring = document.getElementById("ds-health-ring");
-            // 周長 2 * PI * 42 = 263.89
-            const offset = 263.89 - (263.89 * score / 100);
-            ring.setAttribute("stroke-dashoffset", offset);
-            
-            if (score >= 90) ring.style.stroke = "var(--neon-green)";
-            else if (score >= 60) ring.style.stroke = "var(--neon-orange)";
-            else ring.style.stroke = "var(--neon-red)";
-
-            // 2. 統計數據
-            document.getElementById("ds-total-val").textContent = `${data.total_images} 張`;
-            document.getElementById("ds-labeled-val").textContent = `${data.labeled_images} 張`;
-            document.getElementById("ds-empty-val").textContent = `${data.empty_images} 張`;
-            document.getElementById("ds-broken-val").textContent = `${data.broken_images.length} 張`;
-
-            // 3. 尺寸列表
-            const sizesDiv = document.getElementById("ds-sizes-list");
-            sizesDiv.innerHTML = "";
-            const sizes = Object.entries(data.image_sizes);
-            if (sizes.length === 0) {
-                sizesDiv.innerHTML = "<div>無圖片尺寸統計。</div>";
-            } else {
-                sizes.sort((a,b) => b[1] - a[1]).slice(0, 4).forEach(([sz, count]) => {
-                    sizesDiv.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>📐 ${sz}</span><span>${count} 張</span></div>`;
-                });
-            }
-
-            // 4. 破損檔案
-            const brokenDiv = document.getElementById("ds-broken-list");
-            const brokenTitle = document.getElementById("ds-broken-title");
-            brokenDiv.innerHTML = "";
-            if (data.broken_images.length === 0) {
-                brokenTitle.style.display = "none";
-                brokenDiv.style.display = "none";
-            } else {
-                brokenTitle.style.display = "block";
-                brokenDiv.style.display = "block";
-                data.broken_images.forEach(img => {
-                    brokenDiv.innerHTML += `<div style="margin-bottom: 2px; color: var(--neon-red); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">❌ ${img}</div>`;
-                });
-            }
-
-            // 5. 繪製類別統計圖
-            this.drawDatasetClassChart(data.class_distribution);
-
-            showToast("資料集健康度分析完成！", "success");
-        } catch (err) {
-            showToast(`資料集分析失敗: ${err.message}`, "error");
-        }
-    },
-
-    drawDatasetClassChart(classCounts) {
-        const canvas = document.getElementById("ds-class-chart");
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        const w = canvas.parentElement.clientWidth || 300;
-        const h = canvas.parentElement.clientHeight || 150;
-        canvas.width = w;
-        canvas.height = h;
-
-        ctx.clearRect(0, 0, w, h);
-        const keys = Object.keys(classCounts);
-        if (keys.length === 0) {
-            ctx.fillStyle = "#626285";
-            ctx.font = "12px Outfit, sans-serif";
-            ctx.textAlign = "center";
-            ctx.fillText("尚無任何類別標記數據", w / 2, h / 2);
-            return;
-        }
-
-        const maxVal = Math.max(...Object.values(classCounts), 1);
-        const padLeft = 65;
-        const padRight = 30;
-        const padTop = 10;
-        const padBottom = 10;
-        const chartW = w - padLeft - padRight;
-        const chartH = h - padTop - padBottom;
-        const rowH = chartH / keys.length;
-
-        keys.forEach((key, idx) => {
-            const count = classCounts[key];
-            const barW = (count / maxVal) * chartW;
-            const barY = padTop + (rowH * idx) + (rowH * 0.15);
-            const barH = rowH * 0.7;
-
-            const color = ImageLabeler.classColors[key] || "var(--neon-blue)";
-            ctx.fillStyle = color;
-            ctx.fillRect(padLeft, barY, barW, barH);
-
-            ctx.fillStyle = document.body.classList.contains("light-mode") ? "#1c1c28" : "#f1f1f7";
-            ctx.font = "10px Outfit, sans-serif";
-            ctx.textAlign = "right";
-            ctx.fillText(key, padLeft - 6, barY + (barH / 2) + 3);
-
-            ctx.fillStyle = "var(--text-secondary)";
-            ctx.textAlign = "left";
-            ctx.fillText(count, padLeft + barW + 6, barY + (barH / 2) + 3);
-        });
-    },
-
-    // ==========================================================================
-    // 資料集隨機切分 Splitter Modal
-    // ==========================================================================
     openDatasetSplitterModal() {
-        const modal = document.getElementById("ds-splitter-modal");
-        if (!modal) return;
-
-        const closeBtn = document.getElementById("btn-ds-splitter-close");
-        const closeHandler = () => {
-            modal.classList.remove("active");
-            closeBtn.removeEventListener("click", closeHandler);
-        };
-        closeBtn.addEventListener("click", closeHandler);
-
-        const sTrain = document.getElementById("slider-split-train");
-        const sVal = document.getElementById("slider-split-val");
-        const sTest = document.getElementById("slider-split-test");
-
-        const updateSplitLabels = () => {
-            const vTrain = parseInt(sTrain.value);
-            const vVal = parseInt(sVal.value);
-            const vTest = parseInt(sTest.value);
-
-            document.getElementById("lbl-split-train").textContent = `${vTrain}%`;
-            document.getElementById("lbl-split-val").textContent = `${vVal}%`;
-            document.getElementById("lbl-split-test").textContent = `${vTest}%`;
-
-            const total = vTrain + vVal + vTest;
-            const status = document.getElementById("split-total-status");
-            status.textContent = `比例總和：${total}%`;
-
-            if (total !== 100) {
-                status.style.color = "var(--neon-red)";
-                document.getElementById("btn-ds-splitter-submit").disabled = true;
-            } else {
-                status.style.color = "var(--text-primary)";
-                document.getElementById("btn-ds-splitter-submit").disabled = false;
-            }
-
-            if (this.images.length > 0) {
-                const tr = Math.round(this.images.length * vTrain / 100);
-                const vl = Math.round(this.images.length * vVal / 100);
-                const ts = this.images.length - tr - vl;
-                document.getElementById("split-calc-count").textContent = `預計: ${tr} / ${vl} / ${ts} 張`;
-            } else {
-                document.getElementById("split-calc-count").textContent = "無圖片檔案";
-            }
-        };
-
-        sTrain.oninput = (e) => {
-            const val = parseInt(e.target.value);
-            const remain = 100 - val;
-            const sumVT = parseInt(sVal.value) + parseInt(sTest.value) || 1;
-            const ratioVal = parseInt(sVal.value) / sumVT;
-            sVal.value = Math.round(remain * ratioVal);
-            sTest.value = 100 - val - parseInt(sVal.value);
-            updateSplitLabels();
-        };
-
-        sVal.oninput = (e) => {
-            const val = parseInt(e.target.value);
-            const remain = 100 - val;
-            const sumTT = parseInt(sTrain.value) + parseInt(sTest.value) || 1;
-            const ratioTrain = parseInt(sTrain.value) / sumTT;
-            sTrain.value = Math.round(remain * ratioTrain);
-            sTest.value = 100 - val - parseInt(sTrain.value);
-            updateSplitLabels();
-        };
-
-        sTest.oninput = (e) => {
-            const val = parseInt(e.target.value);
-            const remain = 100 - val;
-            const sumTV = parseInt(sTrain.value) + parseInt(sVal.value) || 1;
-            const ratioTrain = parseInt(sTrain.value) / sumTV;
-            sTrain.value = Math.round(remain * ratioTrain);
-            sVal.value = 100 - val - parseInt(sTrain.value);
-            updateSplitLabels();
-        };
-
-        updateSplitLabels();
-
-        // 點擊切分
-        document.getElementById("btn-ds-splitter-submit").onclick = async () => {
-            const tr = parseInt(sTrain.value) / 100;
-            const vl = parseInt(sVal.value) / 100;
-            const ts = parseInt(sTest.value) / 100;
-
-            try {
-                showToast("正在背景切分資料集...", "info");
-                const res = await API.splitDataset(tr, vl, ts);
-                if (res.status === "success") {
-                    showToast(res.message, "success");
-                    modal.classList.remove("active");
-                } else {
-                    showToast(res.message, "error");
-                }
-            } catch (err) {
-                showToast(`切分失敗: ${err.message}`, "error");
-            }
-        };
-
-        modal.classList.add("active");
+        this.switchView("distribution-view");
+        this.switchWorkspaceTab("distribution-view", "dist-split");
     },
 
-    // ==========================================================================
-    // 實驗歷史與評估看板 Modal 控制
-    // ==========================================================================
-    async openExpTrackerModal() {
-        const modal = document.getElementById("exp-tracker-modal");
-        if (!modal) return;
-
-        const closeBtn = document.getElementById("btn-exp-tracker-close");
-        const closeHandler = () => {
-            modal.classList.remove("active");
-            closeBtn.removeEventListener("click", closeHandler);
-        };
-        closeBtn.addEventListener("click", closeHandler);
-
-        await this.loadExperimentsList();
-        modal.classList.add("active");
+    openExpTrackerModal() {
+        this.switchView("training-workflow-view");
+        this.switchWorkspaceTab("training-workflow-view", "train-metrics");
     },
 
-    async loadExperimentsList() {
-        const listDiv = document.getElementById("exp-runs-list");
-        const detailsContent = document.getElementById("exp-details-content");
-        const placeholder = document.querySelector("#exp-details-panel .empty-hint");
-
-        if (!listDiv) return;
-
-        try {
-            const experiments = await API.listExperiments();
-            listDiv.innerHTML = "";
-
-            if (experiments.length === 0) {
-                listDiv.innerHTML = '<div class="empty-hint" style="text-align: center; padding: 20px;">無訓練實驗紀錄。</div>';
-                if (detailsContent) detailsContent.style.display = "none";
-                if (placeholder) placeholder.style.display = "flex";
-                return;
-            }
-
-            experiments.forEach((exp, idx) => {
-                const item = document.createElement("div");
-                item.className = "run-list-item";
-                item.innerHTML = `
-                    <div class="run-header-row">
-                        <span class="run-id-text">${exp.run_id}</span>
-                        <span class="run-meta-time">${exp.created_at.split(' ')[0]}</span>
-                    </div>
-                    <div class="run-metrics-summary">
-                        <span>Best Acc: <b class="gold-color">${exp.best_accuracy}</b></span>
-                        <span>Epochs: <b>${exp.epoch}</b></span>
-                    </div>
-                `;
-
-                item.addEventListener("click", () => {
-                    listDiv.querySelectorAll(".run-list-item").forEach(b => b.classList.remove("selected"));
-                    item.classList.add("selected");
-                    this.showExperimentDetails(exp);
-                });
-
-                listDiv.appendChild(item);
-
-                // 預設選中第一個
-                if (idx === 0) {
-                    item.click();
-                }
-            });
-        } catch (e) {
-            listDiv.innerHTML = '<div class="empty-hint" style="text-align: center; padding: 20px; color: var(--neon-red);">無法載入實驗清單。</div>';
-        }
+    openModelRegistryModal() {
+        this.switchView("training-workflow-view");
+        this.switchWorkspaceTab("training-workflow-view", "train-registry");
     },
 
-    showExperimentDetails(exp) {
-        const detailsContent = document.getElementById("exp-details-content");
-        const placeholder = document.querySelector("#exp-details-panel .empty-hint");
-
-        if (!detailsContent) return;
-        placeholder.style.display = "none";
-        detailsContent.style.display = "flex";
-
-        // 更新文字
-        document.getElementById("exp-title-run-id").textContent = exp.run_id;
-        document.getElementById("exp-title-created-at").textContent = `建立時間: ${exp.created_at}`;
-
-        document.getElementById("exp-metric-best-acc").textContent = exp.best_accuracy;
-        document.getElementById("exp-metric-epochs").textContent = `${exp.epoch} Epochs`;
-        
-        const lossText = exp.val_loss !== "-" ? parseFloat(exp.val_loss).toFixed(4) : "-";
-        document.getElementById("exp-metric-loss").textContent = lossText;
-
-        // 渲染 Confusion Matrix (模擬生成對角高亮網格)
-        const matrixContainer = document.getElementById("exp-matrix-container");
-        matrixContainer.innerHTML = "";
-        const size = this.classes.length;
-        matrixContainer.style.gridTemplateColumns = `repeat(${size + 1}, 1fr)`;
-
-        // 標題行
-        const headers = ["", ...this.classes];
-        headers.forEach(h => {
-            const cell = document.createElement("div");
-            cell.className = "matrix-cell header";
-            cell.style.padding = "4px";
-            cell.style.fontWeight = "bold";
-            cell.textContent = h;
-            matrixContainer.appendChild(cell);
-        });
-
-        for (let r = 0; r < size; r++) {
-            // 列頭
-            const cellHeader = document.createElement("div");
-            cellHeader.className = "matrix-cell header";
-            cellHeader.style.padding = "4px";
-            cellHeader.style.fontWeight = "bold";
-            cellHeader.textContent = this.classes[r];
-            matrixContainer.appendChild(cellHeader);
-
-            for (let c = 0; c < size; c++) {
-                const cell = document.createElement("div");
-                cell.style.padding = "6px";
-                cell.style.borderRadius = "4px";
-                
-                let val = 0;
-                if (r === c) {
-                    val = r === 0 ? 94 : r === 1 ? 91 : 95;
-                    cell.style.background = "rgba(0, 230, 118, 0.15)";
-                    cell.style.color = "var(--neon-green)";
-                    cell.style.border = "1px solid rgba(0, 230, 118, 0.3)";
-                } else {
-                    val = (r + c) % 2 === 0 ? 3 : 1;
-                    cell.style.background = "rgba(255, 255, 255, 0.02)";
-                    cell.style.color = "var(--text-muted)";
-                    cell.style.border = "1px solid transparent";
-                }
-                cell.textContent = `${val}%`;
-                matrixContainer.appendChild(cell);
-            }
-        }
-
-        // 渲染 HTML5 Canvas 模擬歷史曲線
-        this.drawExperimentCurves(exp);
-    },
-
-    drawExperimentCurves(exp) {
-        const canvas = document.getElementById("exp-curve-canvas");
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        const w = canvas.parentElement.clientWidth || 300;
-        const h = canvas.parentElement.clientHeight || 180;
-        canvas.width = w;
-        canvas.height = h;
-
-        const isLight = document.body.classList.contains("light-mode");
-        ctx.fillStyle = isLight ? "#ffffff" : "#121225";
-        ctx.fillRect(0, 0, w, h);
-
-        const padLeft = 40;
-        const padRight = 40;
-        const padTop = 20;
-        const padBottom = 25;
-        const graphW = w - padLeft - padRight;
-        const graphH = h - padTop - padBottom;
-
-        // 畫網格
-        ctx.strokeStyle = isLight ? "rgba(0, 0, 0, 0.04)" : "rgba(255,255,255,0.03)";
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= 4; i++) {
-            const y = padTop + (graphH * i / 4);
-            ctx.beginPath();
-            ctx.moveTo(padLeft, y);
-            ctx.lineTo(w - padRight, y);
-            ctx.stroke();
-
-            // 刻度文字
-            ctx.fillStyle = "var(--text-muted)";
-            ctx.font = "9px monospace";
-            ctx.textAlign = "right";
-            ctx.fillText((1.2 - (i * 0.3)).toFixed(1), padLeft - 6, y + 3);
-
-            ctx.textAlign = "left";
-            ctx.fillText(`${Math.round(100 - (i * 25))}%`, w - padRight + 6, y + 3);
-        }
-
-        // 解析 epoch 總數
-        const epochs = exp.epoch !== "-" ? parseInt(exp.epoch) : 50;
-        const bestAcc = exp.best_accuracy !== "-" ? parseFloat(exp.best_accuracy) : 94.2;
-        const finalLoss = exp.val_loss !== "-" ? parseFloat(exp.val_loss) : 0.05;
-
-        // 生成擬合曲線點
-        const pointsX = [];
-        const trainL = [];
-        const valL = [];
-        const accs = [];
-
-        for (let i = 1; i <= epochs; i++) {
-            pointsX.push(padLeft + (graphW * (i - 1) / (epochs - 1 || 1)));
-            const factor = 1.0 - (i / epochs);
-            trainL.push(h - padBottom - (graphH * (finalLoss + (0.8 - finalLoss) * Math.pow(factor, 1.5)) / 1.2));
-            valL.push(h - padBottom - (graphH * (finalLoss + 0.02 + (0.85 - finalLoss) * Math.pow(factor, 1.5)) / 1.2));
-            accs.push(h - padBottom - (graphH * (bestAcc - (bestAcc - 10) * Math.pow(factor, 2.0)) / 100));
-        }
-
-        // 畫曲線函數
-        const drawPath = (pointsY, color) => {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(pointsX[0], pointsY[0]);
-            for (let i = 1; i < epochs; i++) {
-                ctx.lineTo(pointsX[i], pointsY[i]);
-            }
-            ctx.stroke();
-        };
-
-        drawPath(trainL, "var(--neon-blue)");
-        drawPath(valL, "var(--neon-purple)");
-        drawPath(accs, "var(--neon-green)");
-    },
-
-    // ==========================================================================
-    // 模型登錄中心 Model Registry
-    // ==========================================================================
-    async openModelRegistryModal() {
-        const modal = document.getElementById("model-registry-modal");
-        if (!modal) return;
-
-        const closeBtn = document.getElementById("btn-model-registry-close");
-        const closeHandler = () => {
-            modal.classList.remove("active");
-            closeBtn.removeEventListener("click", closeHandler);
-        };
-        closeBtn.addEventListener("click", closeHandler);
-
-        await this.loadModelsRegistry();
-        modal.classList.add("active");
-    },
-
-    async loadModelsRegistry() {
-        const tbody = document.getElementById("model-registry-tbody");
-        if (!tbody) return;
-
-        try {
-            const models = await API.listModels();
-            tbody.innerHTML = "";
-
-            if (models.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="no-data">輸出目錄中尚未產出任何模型權重或匯出檔案。</td></tr>';
-                return;
-            }
-
-            models.forEach(m => {
-                const tr = document.createElement("tr");
-                const stages = ["Draft", "Validated", "Exported", "Production", "Archived"];
-                const options = stages.map(s => `<option value="${s}" ${s === m.stage ? "selected" : ""}>${s}</option>`).join("");
-                
-                tr.innerHTML = `
-                    <td style="font-weight: 600;">${m.name}</td>
-                    <td><span class="badge">${m.format}</span></td>
-                    <td>${m.size_mb} MB</td>
-                    <td>
-                        <select class="form-control select-stage" data-path="${m.path}" style="padding: 2px 6px; font-size: 0.72rem; border-radius: 6px;">
-                            ${options}
-                        </select>
-                    </td>
-                    <td style="font-size: 0.7rem; color: var(--text-secondary);">${m.created_at}</td>
-                    <td>
-                        <a href="${API_BASE}/api/transform/download?file=${m.path}" class="btn btn-secondary btn-sm" download style="padding: 4px 8px; font-size: 0.7rem;"><i class="fa-solid fa-download"></i> 下載</a>
-                    </td>
-                `;
-
-                // 綁定 Stage 變更
-                const select = tr.querySelector(".select-stage");
-                select.addEventListener("change", async (e) => {
-                    const stage = e.target.value;
-                    const path = select.getAttribute("data-path");
-                    try {
-                        await API.tagModel(path, stage);
-                        showToast(`模型部署狀態更新為: ${stage}`, "success");
-                    } catch (err) {
-                        showToast(`變更模型標籤失敗: ${err.message}`, "error");
-                    }
-                });
-
-                tbody.appendChild(tr);
-            });
-        } catch (e) {
-            tbody.innerHTML = '<tr><td colspan="6" class="no-data" style="color: var(--neon-red);">無法載入模型倉庫清單。</td></tr>';
-        }
-    },
-
-    // ==========================================================================
-    // 終端日誌檢視器 Log Viewer Modal
-    // ==========================================================================
     openLogViewerModal() {
-        const modal = document.getElementById("log-viewer-modal");
-        if (!modal) return;
-
-        const closeBtn = document.getElementById("btn-log-viewer-close");
-        const closeHandler = () => {
-            modal.classList.remove("active");
-            closeBtn.removeEventListener("click", closeHandler);
-            if (this.logViewerTimer) {
-                clearInterval(this.logViewerTimer);
-                this.logViewerTimer = null;
+        const modal = this.el("log-viewer-modal");
+        if (modal) {
+            modal.classList.add("active");
+        } else {
+            console.warn("[DOM-MISSING] log-viewer-modal not found.");
+            if (typeof showToast === "function") {
+                showToast("Log Viewer 尚未掛載到新版頁面", "warn");
             }
-        };
-        closeBtn.addEventListener("click", closeHandler);
-
-        // 複製按鈕
-        document.getElementById("btn-log-copy").onclick = () => {
-            const consoleBox = document.getElementById("system-logs-console");
-            const text = consoleBox.innerText;
-            navigator.clipboard.writeText(text)
-                .then(() => showToast("日誌已成功複製到剪貼簿！", "success"))
-                .catch(() => showToast("日誌複製失敗", "error"));
-        };
-
-        const renderLogs = async () => {
-            const consoleBox = document.getElementById("system-logs-console");
-            const source = document.getElementById("log-source-select").value;
-
-            try {
-                const data = await API.readLogs();
-                // 如果前端指定讀取 backend 或者是因為訓練無日誌而回退
-                consoleBox.innerHTML = "";
-                
-                let linesToRender = data.lines;
-                if (source === "backend" && data.source !== "backend_err.log") {
-                    // 若後端最近一次日誌為訓練日誌，但前端想看 backend_err.log
-                    try {
-                        const errRes = await fetch(`${API_BASE}/api/logs/read`);
-                        const errData = await errRes.json();
-                        linesToRender = errData.lines;
-                    } catch(e) {}
-                }
-
-                if (linesToRender.length === 0) {
-                    consoleBox.innerHTML = '<div class="log-line system">日誌為空。</div>';
-                } else {
-                    linesToRender.forEach(line => {
-                        const div = document.createElement("div");
-                        div.className = "log-line";
-                        if (line.includes("WARNING") || line.includes("warning")) div.className = "log-line warning";
-                        if (line.includes("ERROR") || line.includes("error") || line.includes("fail") || line.includes("Traceback")) div.className = "log-line danger";
-                        if (line.includes("INFO") || line.includes("SUCCESS")) div.className = "log-line system";
-                        div.textContent = line.replace(/\n$/, "");
-                        consoleBox.appendChild(div);
-                    });
-                }
-                consoleBox.scrollTop = consoleBox.scrollHeight;
-            } catch (e) {
-                consoleBox.innerHTML = '<div class="log-line danger">獲取執行日誌失敗。</div>';
-            }
-        };
-
-        // 切換來源
-        document.getElementById("log-source-select").onchange = () => renderLogs();
-
-        // 定期輪詢
-        if (this.logViewerTimer) clearInterval(this.logViewerTimer);
-        renderLogs();
-        this.logViewerTimer = setInterval(() => {
-            const autoRefresh = document.getElementById("chk-log-auto-refresh").checked;
-            if (autoRefresh && modal.classList.contains("active")) {
-                renderLogs();
-            }
-        }, 2000);
-
-        modal.classList.add("active");
+        }
     }
 };
 
