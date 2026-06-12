@@ -348,6 +348,72 @@ def scan_data():
         }
     }
 
+def safe_extract_zip(zip_file: zipfile.ZipFile, target_dir: Path) -> int:
+    imported_count = 0
+    valid_extensions = {".jpg", ".png", ".bmp", ".jpeg"}
+    target_root = target_dir.resolve()
+
+    for member in zip_file.infolist():
+        if member.is_dir():
+            continue
+
+        member_path = Path(member.filename)
+        if member_path.is_absolute() or ".." in member_path.parts:
+            raise HTTPException(status_code=400, detail=f"ZIP 內含不安全路徑: {member.filename}")
+
+        if member_path.suffix.lower() not in valid_extensions:
+            continue
+
+        output_path = (target_root / member_path).resolve()
+        if target_root not in output_path.parents and output_path != target_root:
+            raise HTTPException(status_code=400, detail=f"ZIP 內含越界路徑: {member.filename}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with zip_file.open(member) as src, open(output_path, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+        imported_count += 1
+
+    return imported_count
+
+@app.post("/api/data/import")
+async def import_data(files: List[UploadFile] = File(...)):
+    if not active_project["input_path"]:
+        raise HTTPException(status_code=400, detail="沒有啟用中的專案")
+
+    input_dir = Path(active_project["input_path"]).resolve()
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    imported_count = 0
+    skipped_count = 0
+    valid_extensions = {".jpg", ".png", ".bmp", ".jpeg"}
+
+    for file in files:
+        filename = Path(file.filename or "").name
+        ext = Path(filename).suffix.lower()
+
+        try:
+            if ext == ".zip":
+                with zipfile.ZipFile(file.file) as zf:
+                    imported_count += safe_extract_zip(zf, input_dir)
+            elif ext in valid_extensions:
+                output_path = input_dir / filename
+                with open(output_path, "wb") as dst:
+                    shutil.copyfileobj(file.file, dst)
+                imported_count += 1
+            else:
+                skipped_count += 1
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail=f"ZIP 檔案格式無效: {filename}")
+        finally:
+            await file.close()
+
+    return {
+        "status": "success",
+        "imported": imported_count,
+        "skipped": skipped_count,
+        "message": f"已匯入 {imported_count} 張圖片"
+    }
+
 @app.post("/api/labels/save")
 def save_labels(payload: Dict):
     if not active_project["input_path"]:

@@ -795,9 +795,33 @@ const App = {
             dragArea.addEventListener("drop", (e) => {
                 e.preventDefault();
                 dragArea.classList.remove("drag-over");
-                showToast("拖曳匯入完成 (ZIP 自動解壓並重新掃描)", "success");
-                this.scanDataset();
+                this.importDatasetFiles(e.dataTransfer.files);
             });
+        }
+
+        this.on("file-input-dummy", "change", (e) => {
+            this.importDatasetFiles(e.target.files);
+            e.target.value = "";
+        });
+    },
+
+    async importDatasetFiles(files) {
+        if (!files || files.length === 0) return;
+        if (!this.projectLoaded) {
+            showToast("請先建立或載入專案，再匯入資料集", "warn");
+            return;
+        }
+
+        try {
+            showToast("正在匯入資料集...", "info");
+            const result = await API.importData(files);
+            showToast(`${result.message}，正在重新掃描`, "success");
+            await this.scanDataset();
+            if (document.getElementById("database-view")?.classList.contains("active")) {
+                await this.initExplorerView();
+            }
+        } catch (err) {
+            showToast(`資料匯入失敗: ${err.message}`, "error");
         }
     },
 
@@ -1048,10 +1072,14 @@ const App = {
             labelDragArea.addEventListener("drop", (e) => {
                 e.preventDefault();
                 labelDragArea.classList.remove("drag-over");
-                showToast("拖曳匯入完成 (ZIP 自動解壓並重新掃描)", "success");
-                this.scanDataset();
+                this.importDatasetFiles(e.dataTransfer.files);
             });
         }
+
+        this.on("label-file-input-dummy", "change", (e) => {
+            this.importDatasetFiles(e.target.files);
+            e.target.value = "";
+        });
 
         // 掃描與清除
         this.on("btn-label-scan-data", "click", () => {

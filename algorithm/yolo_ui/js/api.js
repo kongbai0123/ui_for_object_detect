@@ -76,6 +76,26 @@ const API = {
         return this._get("/api/data/scan");
     },
 
+    async importData(files) {
+        const formData = new FormData();
+        Array.from(files).forEach(file => formData.append("files", file));
+
+        try {
+            const res = await fetch(`${API_BASE}/api/data/import`, {
+                method: "POST",
+                body: formData
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || "資料匯入失敗");
+            }
+            return await res.json();
+        } catch (error) {
+            console.error("POST /api/data/import 出錯:", error);
+            throw error;
+        }
+    },
+
     // 標籤管理
     async saveLabels(payload) {
         return this._post("/api/labels/save", payload);
