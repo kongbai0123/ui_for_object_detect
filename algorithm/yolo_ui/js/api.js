@@ -49,6 +49,14 @@ const API = {
         });
     },
 
+    async exportDataset() {
+        return this._post("/api/dataset/export", {});
+    },
+
+    async generateReport() {
+        return this._post("/api/report/generate", {});
+    },
+
     // 實驗追蹤
     async listExperiments() {
         return this._get("/api/experiments/list");
@@ -108,6 +116,10 @@ const API = {
 
     async getTrainStatus() {
         return this._get("/api/train/status");
+    },
+
+    async stopTrain() {
+        return this._post("/api/train/stop", {});
     },
 
     async getTrainedModels() {

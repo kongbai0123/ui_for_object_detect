@@ -1084,6 +1084,200 @@ def dataset_split(req: SplitRequest):
         "test_count": len(test_imgs)
     }
 
+def get_project_images(input_dir: Path) -> List[str]:
+    valid_extensions = {".jpg", ".png", ".bmp", ".jpeg"}
+    images = []
+    for root, dirs, files in os.walk(input_dir):
+        if "runs" in Path(root).parts or "exports" in Path(root).parts:
+            continue
+        for f in files:
+            if Path(f).suffix.lower() in valid_extensions:
+                rel_path = os.path.relpath(os.path.join(root, f), input_dir).replace("\\", "/")
+                images.append(rel_path)
+    return sorted(images)
+
+def load_label_map(input_dir: Path) -> Dict[str, str]:
+    labels = {}
+    csv_file = input_dir / "labels.csv"
+    if not csv_file.exists():
+        return labels
+
+    try:
+        import csv
+        with open(csv_file, "r", encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                image_path = row.get("image_path", "")
+                if image_path:
+                    labels[image_path] = row.get("label", "")
+    except Exception as e:
+        print(f"Error reading labels.csv for export: {e}")
+    return labels
+
+def label_to_yolo_lines(label_value: str, class_names: List[str]) -> List[str]:
+    if not label_value:
+        return []
+
+    label_value = label_value.strip()
+    lines = []
+    if label_value.startswith("["):
+        try:
+            boxes = json.loads(label_value)
+            for box in boxes:
+                label = box.get("label", "")
+                if label not in class_names:
+                    class_names.append(label)
+                class_id = class_names.index(label)
+                x = float(box.get("x", 0.5))
+                y = float(box.get("y", 0.5))
+                w = float(box.get("w", 1.0))
+                h = float(box.get("h", 1.0))
+                lines.append(f"{class_id} {x:.6f} {y:.6f} {w:.6f} {h:.6f}")
+        except Exception:
+            return []
+    else:
+        label = label_value
+        if label not in class_names:
+            class_names.append(label)
+        class_id = class_names.index(label)
+        lines.append(f"{class_id} 0.500000 0.500000 1.000000 1.000000")
+    return lines
+
+@app.post("/api/dataset/export")
+def export_dataset():
+    if not active_project.get("input_path"):
+        raise HTTPException(status_code=400, detail="沒有啟用中的專案")
+
+    input_dir = Path(active_project["input_path"]).resolve()
+    if not input_dir.exists():
+        raise HTTPException(status_code=400, detail="專案目錄不存在")
+
+    split_file = input_dir / "split_config.json"
+    if split_file.exists():
+        with open(split_file, "r", encoding="utf-8") as f:
+            split_data = json.load(f)
+    else:
+        images = get_project_images(input_dir)
+        total = len(images)
+        train_end = int(total * 0.7)
+        val_end = train_end + int(total * 0.2)
+        split_data = {
+            "train": images[:train_end],
+            "val": images[train_end:val_end],
+            "test": images[val_end:],
+            "ratios": {"train": 0.7, "val": 0.2, "test": 0.1},
+            "timestamp": time.time()
+        }
+        with open(split_file, "w", encoding="utf-8") as f:
+            json.dump(split_data, f, indent=4, ensure_ascii=False)
+
+    export_dir = input_dir / "exports" / "yolo_dataset_v001"
+    if export_dir.exists():
+        shutil.rmtree(export_dir)
+
+    label_map = load_label_map(input_dir)
+    class_names = list(active_project.get("classes") or [])
+    counts = {}
+
+    for split_name in ["train", "val", "test"]:
+        images_dir = export_dir / "images" / split_name
+        labels_dir = export_dir / "labels" / split_name
+        images_dir.mkdir(parents=True, exist_ok=True)
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        counts[split_name] = 0
+
+        for rel_path in split_data.get(split_name, []):
+            src = (input_dir / rel_path).resolve()
+            if not src.exists() or input_dir not in src.parents:
+                continue
+            dst_img = images_dir / rel_path
+            dst_img.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst_img)
+
+            dst_label = labels_dir / Path(rel_path).with_suffix(".txt")
+            dst_label.parent.mkdir(parents=True, exist_ok=True)
+            lines = label_to_yolo_lines(label_map.get(rel_path, ""), class_names)
+            with open(dst_label, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+            counts[split_name] += 1
+
+    with open(export_dir / "classes.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(class_names))
+
+    yaml_lines = [
+        f"path: {str(export_dir).replace(chr(92), '/')}",
+        "train: images/train",
+        "val: images/val",
+        "test: images/test",
+        f"nc: {len(class_names)}",
+        "names:"
+    ]
+    yaml_lines.extend([f"  {i}: {name}" for i, name in enumerate(class_names)])
+    with open(export_dir / "data.yaml", "w", encoding="utf-8") as f:
+        f.write("\n".join(yaml_lines) + "\n")
+
+    return {
+        "status": "success",
+        "export_path": str(export_dir),
+        "counts": counts,
+        "classes": class_names
+    }
+
+@app.post("/api/report/generate")
+def generate_report():
+    if not active_project.get("input_path"):
+        raise HTTPException(status_code=400, detail="沒有啟用中的專案")
+
+    input_dir = Path(active_project["input_path"]).resolve()
+    output_dir = Path(active_project.get("output_path") or (input_dir / "runs")).resolve()
+    report_dir = output_dir / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    scan = scan_data()
+    dataset = dataset_check()
+    report_path = report_dir / "model_development_report.md"
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    lines = [
+        f"# {active_project.get('project_name', 'YOLO Project')} 模型開發報告",
+        "",
+        f"- 產生時間：{now}",
+        f"- Input：{active_project.get('input_path', '')}",
+        f"- Output：{active_project.get('output_path', '')}",
+        f"- 任務類型：{active_project.get('task_type', 'Detection')}",
+        "",
+        "## 資料集摘要",
+        f"- 圖片總數：{scan['summary']['total_images']}",
+        f"- 已標註：{scan['summary']['done']}",
+        f"- 待確認：{scan['summary']['pending']}",
+        f"- 已忽略：{scan['summary']['ignored']}",
+        f"- 健康分數：{dataset['health_score']}",
+        "",
+        "## 類別分布",
+    ]
+
+    if dataset["class_distribution"]:
+        lines.extend([f"- {name}: {count}" for name, count in dataset["class_distribution"].items()])
+    else:
+        lines.append("- 尚無標註類別統計")
+
+    lines.extend([
+        "",
+        "## 訓練狀態",
+        f"- 目前狀態：{train_status['status']}",
+        f"- Epoch：{train_status['epoch']} / {train_status['total_epochs']}",
+        f"- Best Accuracy：{train_status['best_accuracy']}%",
+        "",
+        "## 後續建議",
+        "- 若仍有待確認影像，請先完成標註審核。",
+        "- 匯出 YOLO dataset 後，可使用 `data.yaml` 交給實際訓練流程。",
+        "- 模型完成後請執行推論與錯誤樣本分析，再更新資料集。"
+    ])
+
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+    return {"status": "success", "report_path": str(report_path)}
+
 @app.get("/api/experiments/list")
 def list_experiments():
     if not active_project.get("output_path"):

@@ -268,13 +268,7 @@ const App = {
             btn.addEventListener("click", (e) => {
                 const targetView = e.currentTarget.getAttribute("data-target");
                 const targetTab = e.currentTarget.getAttribute("data-tab");
-                if (targetTab) {
-                    this.switchView(targetView);
-                    const workspaceId = targetView === "annotation-view" ? "annotation-view" : targetView;
-                    this.switchWorkspaceTab(workspaceId, targetTab);
-                } else {
-                    this.switchView(targetView);
-                }
+                this.switchView(targetView, targetTab);
             });
         });
 
@@ -310,7 +304,7 @@ const App = {
         // 全面啟用，已無須禁用邏輯
     },
 
-    switchView(viewId) {
+    switchView(viewId, requestedTab = null) {
         let targetViewId = viewId;
         let targetTab = null;
 
@@ -343,6 +337,10 @@ const App = {
         if (targetViewId === "annotation-view") {
             const mode = localStorage.getItem("yolo-ann-mode");
             targetTab = (mode === "auto") ? "ann-auto" : "ann-manual";
+        }
+
+        if (requestedTab) {
+            targetTab = requestedTab;
         }
 
         document.querySelectorAll(".app-view").forEach(v => v.classList.remove("active"));
@@ -874,9 +872,9 @@ const App = {
             setElText("lbl-count-ignored", summary.ignored);
 
             const progressPct = summary.total_images > 0 ? Math.round((summary.done / summary.total_images) * 100) : 0;
-            setElText("label-progress-pct", `${progressPct}%`);
-            const pBar = document.getElementById("label-progress-bar");
-            if (pBar) pBar.style.width = `${progressPct}%`;
+            setElText("guide-ann-progress-pct", `${progressPct}%`);
+            const annProgressBar = document.getElementById("guide-ann-progress-bar");
+            if (annProgressBar) annProgressBar.style.width = `${progressPct}%`;
 
             // 更新首頁卡片數據與狀態
             setElText("card-db-total-imgs", summary.total_images);
@@ -1389,9 +1387,9 @@ const App = {
     // ==========================================================================
     setupTrainPageEvents() {
         // 資料切分比例聯動
-        const sTrain = this.el("slider-split-train");
-        const sVal = this.el("slider-split-val");
-        const sTest = this.el("slider-split-test");
+        const sTrain = this.el("slider-train");
+        const sVal = this.el("slider-val");
+        const sTest = this.el("slider-test");
 
         if (sTrain && sVal && sTest) {
             const updateSplitLabels = () => {
@@ -1399,9 +1397,9 @@ const App = {
                 const vVal = parseInt(sVal.value);
                 const vTest = parseInt(sTest.value);
 
-                this.text("lbl-split-train", `${vTrain}%`);
-                this.text("lbl-split-val", `${vVal}%`);
-                this.text("lbl-split-test", `${vTest}%`);
+                this.text("lbl-train", `${vTrain}%`);
+                this.text("lbl-val", `${vVal}%`);
+                this.text("lbl-test", `${vTest}%`);
 
                 const total = vTrain + vVal + vTest;
                 const status = this.el("split-total-status");
@@ -1448,6 +1446,44 @@ const App = {
         } else {
             console.warn("[DOM-MISSING] split sliders not found, skip split ratio binding.");
         }
+
+        this.on("btn-apply-split", "click", async () => {
+            if (!this.projectLoaded) {
+                showToast("請先建立或載入專案，再進行資料切分", "warn");
+                return;
+            }
+            try {
+                const train = parseInt(sTrain?.value || "70") / 100;
+                const val = parseInt(sVal?.value || "20") / 100;
+                const test = parseInt(sTest?.value || "10") / 100;
+                const res = await API.splitDataset(train, val, test);
+                if (res.status === "success") {
+                    showToast(res.message, "success");
+                } else {
+                    showToast(res.message || "資料切分未完成", "warn");
+                }
+            } catch (err) {
+                showToast(`資料切分失敗: ${err.message}`, "error");
+            }
+        });
+
+        this.on("btn-export-dataset", "click", async () => {
+            try {
+                const res = await API.exportDataset();
+                showToast(`資料集已匯出：${res.export_path}`, "success");
+            } catch (err) {
+                showToast(`資料集匯出失敗: ${err.message}`, "error");
+            }
+        });
+
+        this.on("btn-run-report-gen", "click", async () => {
+            try {
+                const res = await API.generateReport();
+                showToast(`報告已產生：${res.report_path}`, "success");
+            } catch (err) {
+                showToast(`報告產生失敗: ${err.message}`, "error");
+            }
+        });
 
         // 資料增強 Preset (含說明面板連動)
         const presetBtns = document.querySelectorAll("[data-preset]");
@@ -1644,9 +1680,13 @@ const App = {
             showToast("訓練線程已成功啟動！", "success");
 
             // 介面切換
-            document.getElementById("train-config-area").style.display = "none";
-            document.getElementById("training-dashboard-area").style.display = "block";
-            document.getElementById("train-results-area").style.display = "none";
+            this.switchWorkspaceTab("training-workflow-view", "train-execute");
+            const startPanel = document.getElementById("train-start-panel");
+            const dashboardArea = document.getElementById("training-dashboard-area");
+            const resultsArea = document.getElementById("train-results-area");
+            if (startPanel) startPanel.style.display = "none";
+            if (dashboardArea) dashboardArea.style.display = "block";
+            if (resultsArea) resultsArea.style.display = "none";
 
             // 顯示底端進度條
             const bottomProgress = document.getElementById("train-bottom-progress");
@@ -1765,8 +1805,10 @@ const App = {
             } else if (status.status === "stopped") {
                 clearInterval(this.trainTimer);
                 showToast("訓練已被使用者終止", "warn");
-                document.getElementById("train-config-area").style.display = "block";
-                document.getElementById("training-dashboard-area").style.display = "none";
+                const startPanel = document.getElementById("train-start-panel");
+                const dashboardArea = document.getElementById("training-dashboard-area");
+                if (startPanel) startPanel.style.display = "block";
+                if (dashboardArea) dashboardArea.style.display = "none";
 
                 // 隱藏底端進度條
                 const bottomProgress = document.getElementById("train-bottom-progress");
@@ -1778,7 +1820,9 @@ const App = {
     },
 
     showTrainingResults(bestAcc) {
-        document.getElementById("train-results-area").style.display = "block";
+        this.switchWorkspaceTab("training-workflow-view", "train-metrics");
+        const resultsArea = document.getElementById("train-results-area");
+        if (resultsArea) resultsArea.style.display = "block";
 
         // 設定數值圓環
         const acc = bestAcc || 94.2;
