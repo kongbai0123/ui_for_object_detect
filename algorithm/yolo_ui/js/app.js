@@ -179,6 +179,9 @@ const App = {
 
         // 7. 檢查本機是否有啟用中的專案
         this.safeSetup("checkExistingProject", () => this.checkExistingProject());
+
+        // 8. 綁定標註模式相關事件與初始化 UI
+        this.safeSetup("setupAnnotationModeEvents", () => this.setupAnnotationModeEvents());
     },
 
     setupBackendHeartbeat() {
@@ -264,7 +267,14 @@ const App = {
         document.querySelectorAll(".btn-enter-flow").forEach(btn => {
             btn.addEventListener("click", (e) => {
                 const targetView = e.currentTarget.getAttribute("data-target");
-                this.switchView(targetView);
+                const targetTab = e.currentTarget.getAttribute("data-tab");
+                if (targetTab) {
+                    this.switchView(targetView);
+                    const workspaceId = targetView === "annotation-view" ? "annotation-view" : targetView;
+                    this.switchWorkspaceTab(workspaceId, targetTab);
+                } else {
+                    this.switchView(targetView);
+                }
             });
         });
 
@@ -307,7 +317,7 @@ const App = {
         // 路由重定向映射
         if (viewId === "explorer-view") {
             targetViewId = "database-view";
-            targetTab = "db-overview";
+            targetTab = "db-manage";
         } else if (viewId === "label-view") {
             targetViewId = "annotation-view";
             targetTab = "ann-manual";
@@ -320,6 +330,19 @@ const App = {
         } else if (viewId === "transform-view") {
             targetViewId = "training-workflow-view";
             targetTab = "train-export";
+        }
+
+
+
+        // 如果進入資料庫管理，預設跳轉到合併的資料管理與總覽頁面
+        if (targetViewId === "database-view" && !targetTab) {
+            targetTab = "db-manage";
+        }
+
+        // 標註中心模式檢查與引導，不拒絕使用者，預設使用 manual
+        if (targetViewId === "annotation-view") {
+            const mode = localStorage.getItem("yolo-ann-mode");
+            targetTab = (mode === "auto") ? "ann-auto" : "ann-manual";
         }
 
         document.querySelectorAll(".app-view").forEach(v => v.classList.remove("active"));
@@ -350,7 +373,7 @@ const App = {
         });
         
         // 3. 觸發特定的初始化/重新整理邏輯
-        if (tabName === "db-overview") {
+        if (tabName === "db-manage" || tabName === "db-overview") {
             this.initExplorerView();
         } else if (tabName === "ann-manual") {
             setTimeout(() => {
@@ -365,8 +388,12 @@ const App = {
         } else if (tabName === "train-export") {
             this.initTransformView();
         } else if (tabName === "db-health") {
-            const refreshBtn = document.getElementById("btn-ds-checker-refresh");
-            if (refreshBtn) refreshBtn.click();
+            if (this.projectLoaded) {
+                const refreshBtn = document.getElementById("btn-ds-checker-refresh");
+                if (refreshBtn) refreshBtn.click();
+            } else {
+                this.resetDbHealthUi();
+            }
         }
         
         // 4. 更新 Smart Guide
@@ -613,23 +640,19 @@ const App = {
     },
 
     async checkExistingProject() {
-        try {
-            let project = await API.getActiveProject();
-            if (!project || project.status !== "active") {
-                // 如果後端無啟用的專案，則自動在背景建立預設專案 (名稱: DefaultProject, 路徑: C:/yolo, 類別: 空)
-                project = await API.createProject("DefaultProject", "C:/yolo", []);
-            }
-            this.onProjectLoaded(project);
-        } catch (e) {
-            console.error("載入或建立預設專案失敗，啟動降級容錯邏輯:", e);
-            // 降級容錯：即使後端連線失敗，也在前端初始化預設設定以保證 UI 正常
-            this.onProjectLoaded({
-                project_name: "DefaultProject",
-                input_path: "C:/yolo",
-                output_path: "C:/yolo/runs",
-                classes: []
-            });
-        }
+        // 要求 0: 每次進入系統預設為空狀態，不自動加載任何專案或快取
+        this.projectLoaded = false;
+        this.projectName = "";
+        this.inputPath = "";
+        this.classes = [];
+        this.images = [];
+        this.currentImgIndex = -1;
+
+        // 清空與重設 UI metrics 為空
+        this.resetUiToEmptyState();
+
+        // 載入並渲染專案歷史紀錄
+        this.renderProjectHistory();
     },
 
     onProjectLoaded(project) {
@@ -669,6 +692,8 @@ const App = {
     setupDataPageEvents() {
         this.on("btn-scan-data", "click", () => this.scanDataset());
         this.on("btn-clear-data", "click", () => this.clearDataset());
+        this.on("btn-save-project-state", "click", () => this.saveProjectState());
+        this.on("btn-ds-checker-refresh", "click", () => this.runDatasetChecker());
 
         // Train 頁面的類別新增按鈕
         this.on("btn-train-add-class", "click", () => {
@@ -879,6 +904,70 @@ const App = {
                 }
             }
 
+            // 同步自動標註版本的指標值與狀態
+            document.querySelectorAll(".card-auto-total-imgs").forEach(el => el.textContent = summary.total_images);
+            setElText("card-auto-health-score", `${healthScore}%`);
+            
+            const processedEl = document.getElementById("card-auto-processed");
+            if (processedEl) {
+                processedEl.textContent = `${summary.done} / ${summary.total_images}`;
+            }
+            
+            document.querySelectorAll(".card-auto-pending-count").forEach(el => el.textContent = unlabeledCount);
+            document.querySelectorAll(".card-auto-verified-count").forEach(el => el.textContent = summary.done);
+            setElText("card-auto-analysis-health", `${healthScore}%`);
+
+            // 同步模型訓練卡片指標至自動標註卡片四
+            const mapVal = document.getElementById("card-train-map")?.textContent || "-";
+            const runVal = document.getElementById("card-train-run")?.textContent || "-";
+            setElText("card-auto-train-map", mapVal);
+            setElText("card-auto-train-run", runVal);
+
+            // 更新自動標註卡片 1、2、3、4 的狀態 Badge
+            const cardAutoDb = document.getElementById("card-auto-db");
+            if (cardAutoDb) {
+                const badge = cardAutoDb.querySelector(".flow-card-badge");
+                if (badge) {
+                    badge.className = summary.total_images > 0 ? "flow-card-badge status-green" : "flow-card-badge status-gray";
+                    badge.textContent = summary.total_images > 0 ? "已就緒" : "未開始";
+                }
+            }
+            const cardAutoRun = document.getElementById("card-auto-run");
+            if (cardAutoRun) {
+                const badge = cardAutoRun.querySelector(".flow-card-badge");
+                if (badge) {
+                    if (summary.total_images > 0) {
+                        badge.className = summary.done === summary.total_images ? "flow-card-badge status-green" : "flow-card-badge status-blue";
+                        badge.textContent = summary.done === summary.total_images ? "已完成" : "進行中";
+                    } else {
+                        badge.className = "flow-card-badge status-gray";
+                        badge.textContent = "未開始";
+                    }
+                }
+            }
+            const cardAutoAnalysis = document.getElementById("card-auto-analysis");
+            if (cardAutoAnalysis) {
+                const badge = cardAutoAnalysis.querySelector(".flow-card-badge");
+                if (badge) {
+                    if (summary.total_images > 0) {
+                        badge.className = unlabeledCount === 0 ? "flow-card-badge status-green" : "flow-card-badge status-blue";
+                        badge.textContent = unlabeledCount === 0 ? "已完成" : "待分析";
+                    } else {
+                        badge.className = "flow-card-badge status-gray";
+                        badge.textContent = "未開始";
+                    }
+                }
+            }
+            const cardAutoTrain = document.getElementById("card-auto-train");
+            if (cardAutoTrain) {
+                const badge = cardAutoTrain.querySelector(".flow-card-badge");
+                const manualTrainBadge = document.getElementById("card-training")?.querySelector(".flow-card-badge");
+                if (badge && manualTrainBadge) {
+                    badge.className = "flow-card-badge " + (manualTrainBadge.className.replace("flow-card-badge", "").trim() || "status-gray");
+                    badge.textContent = manualTrainBadge.textContent;
+                }
+            }
+
             // 寫入快取與重設標記清單
             this.labelDataCache = {};
             this.images.forEach(img => {
@@ -898,7 +987,7 @@ const App = {
             }
 
             // 自動更新 Smart Guides
-            this.updateSmartGuide("database-view", "db-overview");
+            this.updateSmartGuide("database-view", "db-manage");
             this.updateSmartGuide("annotation-view", "ann-manual");
             this.updateSmartGuide("distribution-view", "dist-split");
             this.updateSmartGuide("training-workflow-view", "train-config");
@@ -2223,6 +2312,26 @@ const App = {
     // 07. 資料探索與分析邏輯
     // ==========================================================================
     async initExplorerView() {
+        if (!this.projectLoaded) {
+            const setElText = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = text;
+            };
+            setElText("exp-lbl-done", "0");
+            setElText("exp-lbl-pending", "0");
+            setElText("exp-lbl-ignored", "0");
+            setElText("explorer-progress-pct", "0%");
+            const bar = document.getElementById("explorer-progress-bar");
+            if (bar) bar.style.width = "0%";
+
+            const gallery = document.getElementById("gallery-container");
+            if (gallery) {
+                gallery.innerHTML = '<div class="empty-hint">請先載入專案以查看大圖牆。</div>';
+            }
+            this.drawExplorerChart({});
+            return;
+        }
+
         try {
             const res = await API.scanData();
             this.images = res.images;
@@ -2349,6 +2458,178 @@ const App = {
             ctx.fillStyle = "var(--text-secondary)";
             ctx.textAlign = "left";
             ctx.fillText(count, padLeft + barW + 8, barY + (barH / 2) + 4);
+        });
+    },
+
+    async runDatasetChecker() {
+        if (!this.projectLoaded) {
+            showToast("請先載入或設定工作區專案", "warn");
+            this.resetDbHealthUi();
+            return;
+        }
+        
+        try {
+            showToast("正在分析資料集健康度...", "info");
+            const res = await API.checkDataset();
+            
+            const score = res.health_score ?? 100;
+            const total = res.total_images ?? 0;
+            const labeled = res.labeled_images ?? 0;
+            const empty = res.empty_images ?? 0;
+            const broken = res.broken_images ? res.broken_images.length : 0;
+            
+            const scoreValEl = document.getElementById("ds-health-score-val");
+            if (scoreValEl) scoreValEl.textContent = score;
+            
+            const ring = document.getElementById("ds-health-ring");
+            if (ring) {
+                const offset = 263.89 - (score / 100) * 263.89;
+                ring.style.strokeDashoffset = offset;
+            }
+            
+            const totalValEl = document.getElementById("ds-total-val");
+            if (totalValEl) totalValEl.textContent = total;
+            
+            const labeledValEl = document.getElementById("ds-labeled-val");
+            if (labeledValEl) labeledValEl.textContent = labeled;
+            
+            const emptyValEl = document.getElementById("ds-empty-val");
+            if (emptyValEl) emptyValEl.textContent = empty;
+            
+            const brokenValEl = document.getElementById("ds-broken-val");
+            if (brokenValEl) brokenValEl.textContent = broken;
+            
+            const sizesList = document.getElementById("ds-sizes-list");
+            if (sizesList) {
+                if (res.image_sizes && Object.keys(res.image_sizes).length > 0) {
+                    let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
+                    Object.entries(res.image_sizes).forEach(([size, count]) => {
+                        html += `<li><i class="fa-solid fa-circle" style="font-size:0.5rem; color:var(--neon-blue); margin-right:6px; vertical-align:middle;"></i> 解析度 <b>${size}</b>: ${count} 張</li>`;
+                    });
+                    html += '</ul>';
+                    sizesList.innerHTML = html;
+                } else {
+                    sizesList.innerHTML = '<div style="color:var(--text-muted);">無解析度資訊</div>';
+                }
+            }
+            
+            const brokenList = document.getElementById("ds-broken-list");
+            if (brokenList) {
+                if (res.broken_images && res.broken_images.length > 0) {
+                    let html = '<ul style="list-style: none; padding: 0; margin: 0; color:var(--neon-red);">';
+                    res.broken_images.forEach(path => {
+                        html += `<li style="margin-bottom:4px;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i> ${path}</li>`;
+                    });
+                    html += '</ul>';
+                    brokenList.innerHTML = html;
+                } else {
+                    brokenList.innerHTML = '<div style="color:var(--text-muted);"><i class="fa-solid fa-circle-check" style="color:var(--neon-green); margin-right:6px;"></i>無毀損異常檔案</div>';
+                }
+            }
+            
+            this.drawDbHealthChart(res.class_distribution || {});
+            
+            showToast("資料集健康檢查分析完成！", "success");
+            
+            const homeScore = document.getElementById("card-db-health-score");
+            if (homeScore) homeScore.textContent = `${score}%`;
+            
+        } catch (err) {
+            showToast(`資料集健康檢查失敗: ${err.message}`, "error");
+        }
+    },
+
+    resetDbHealthUi() {
+        const setElText = (id, text) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        };
+        setElText("ds-health-score-val", "-");
+        setElText("ds-total-val", "-");
+        setElText("ds-labeled-val", "-");
+        setElText("ds-empty-val", "-");
+        setElText("ds-broken-val", "-");
+        
+        const ring = document.getElementById("ds-health-ring");
+        if (ring) {
+            ring.style.strokeDashoffset = "263.89";
+        }
+        
+        const sizesList = document.getElementById("ds-sizes-list");
+        if (sizesList) {
+            sizesList.innerHTML = '<div class="empty-hint" style="font-size:0.8rem; color:var(--text-muted);">請先載入專案</div>';
+        }
+        
+        const brokenList = document.getElementById("ds-broken-list");
+        if (brokenList) {
+            brokenList.innerHTML = '<div class="empty-hint" style="font-size:0.8rem; color:var(--text-muted);">請先載入專案</div>';
+        }
+        
+        this.drawDbHealthChart({});
+    },
+
+    drawDbHealthChart(classCounts) {
+        const canvas = document.getElementById("ds-class-chart");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const w = canvas.parentElement.clientWidth;
+        const h = canvas.parentElement.clientHeight;
+        canvas.width = w;
+        canvas.height = h;
+
+        const isLight = document.body.classList.contains("light-mode");
+        ctx.fillStyle = isLight ? "#ffffff" : "#121225";
+        ctx.fillRect(0, 0, w, h);
+
+        const keys = Object.keys(classCounts);
+        if (keys.length === 0) {
+            ctx.fillStyle = "var(--text-muted)";
+            ctx.font = "12px Outfit, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("尚未建立任何類別分佈數據", w / 2, h / 2);
+            return;
+        }
+
+        const maxVal = Math.max(...Object.values(classCounts), 1);
+        const padLeft = 70;
+        const padRight = 30;
+        const padTop = 15;
+        const padBottom = 15;
+
+        const chartW = w - padLeft - padRight;
+        const chartH = h - padTop - padBottom;
+
+        ctx.strokeStyle = isLight ? "#e0e0e0" : "rgba(255,255,255,0.1)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop);
+        ctx.lineTo(padLeft, h - padBottom);
+        ctx.lineTo(w - padRight, h - padBottom);
+        ctx.stroke();
+
+        const barGap = 8;
+        const barH = Math.min(30, (chartH - (keys.length - 1) * barGap) / keys.length);
+        
+        keys.forEach((key, idx) => {
+            const val = classCounts[key];
+            const barW = (val / maxVal) * chartW;
+            const y = padTop + idx * (barH + barGap);
+
+            const grad = ctx.createLinearGradient(padLeft, 0, padLeft + barW, 0);
+            grad.addColorStop(0, "var(--neon-blue)");
+            grad.addColorStop(1, "var(--neon-green)");
+            ctx.fillStyle = grad;
+            ctx.fillRect(padLeft, y, barW, barH);
+
+            ctx.fillStyle = isLight ? "#333333" : "#ffffff";
+            ctx.font = "11px Outfit, sans-serif";
+            ctx.textAlign = "right";
+            ctx.fillText(key, padLeft - 8, y + barH / 2 + 4);
+
+            ctx.fillStyle = "var(--text-secondary)";
+            ctx.font = "10px monospace";
+            ctx.textAlign = "left";
+            ctx.fillText(val, padLeft + barW + 6, y + barH / 2 + 3);
         });
     },
 
@@ -2680,6 +2961,437 @@ const App = {
             if (typeof showToast === "function") {
                 showToast("Log Viewer 尚未掛載到新版頁面", "warn");
             }
+        }
+    },
+
+    // ==========================================================================
+    // 新增: 系統優化與聯動功能
+    // ==========================================================================
+    resetUiToEmptyState() {
+        this.html("active-project-badge", `<span class="dot pulse"></span> 未載入專案`);
+        this.value("input-path-display", "");
+        this.value("output-path-display", "");
+        this.value("label-input-path-display", "");
+        
+        const setElText = (id, text) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        };
+        
+        setElText("card-db-total-imgs", "0");
+        setElText("card-db-health-score", "-");
+        setElText("card-db-version", "-");
+        setElText("card-ann-unlabeled", "0");
+        setElText("card-ann-pending", "0");
+        setElText("card-ann-verified", "0");
+        setElText("card-train-map", "-");
+        setElText("card-train-run", "-");
+
+        // 重置自動標註指標
+        document.querySelectorAll(".card-auto-total-imgs").forEach(el => el.textContent = "0");
+        document.querySelectorAll(".card-auto-pending-count").forEach(el => el.textContent = "0");
+        document.querySelectorAll(".card-auto-verified-count").forEach(el => el.textContent = "0");
+        const processedEl = document.getElementById("card-auto-processed");
+        if (processedEl) processedEl.textContent = "0 / 0";
+        
+        setElText("card-auto-health-score", "-");
+        setElText("card-auto-analysis-health", "-");
+        setElText("card-auto-train-map", "-");
+        setElText("card-auto-train-run", "-");
+        
+        // 重置所有首頁卡片的狀態 badge 為 未開始
+        document.querySelectorAll(".flow-card").forEach(card => {
+            card.classList.remove("current-stage");
+            const badge = card.querySelector(".flow-card-badge");
+            if (badge) {
+                badge.className = "flow-card-badge status-gray";
+                badge.textContent = "未開始";
+            }
+        });
+        
+        // 清空 class tags
+        const tagContainer = document.getElementById("data-class-tags");
+        if (tagContainer) {
+            tagContainer.innerHTML = '<span class="empty-hint">尚未載入專案</span>';
+        }
+        
+        // 標記畫布 placeholder 顯示
+        const placeholder = document.getElementById("canvas-empty-overlay");
+        if (placeholder) placeholder.style.display = "flex";
+
+        // 清空大圖牆並顯示提示
+        const gallery = document.getElementById("gallery-container");
+        if (gallery) gallery.innerHTML = '<div class="empty-hint">請先載入專案以查看大圖牆。</div>';
+        
+        // 重繪直方圖空狀態
+        this.drawExplorerChart({});
+        this.resetDbHealthUi();
+
+        // 智慧指南預設為空白/引導提示
+        const guideDb = document.getElementById("guide-database");
+        if (guideDb) {
+            guideDb.innerHTML = `
+                <div class="guide-header">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <h3>智慧流程助手</h3>
+                </div>
+                <div class="guide-content">
+                    <div class="guide-status-box status-yellow">
+                        <span class="status-indicator"></span>
+                        <div class="status-info">
+                            <h4>目前階段：資料庫</h4>
+                            <p>請先載入或掃描工作目錄。</p>
+                        </div>
+                    </div>
+                    <div class="guide-section">
+                        <h4>下一步建議</h4>
+                        <ul class="guide-list">
+                            <li><i class="fa-solid fa-circle-arrow-right"></i> 在左側設定您的工作目錄路徑。</li>
+                            <li><i class="fa-solid fa-circle-arrow-right"></i> 點選「掃描目錄」載入影像與標籤。</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        const guideAnn = document.getElementById("guide-annotation");
+        if (guideAnn) {
+            guideAnn.innerHTML = `
+                <div class="guide-header">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <h3>智慧流程助手</h3>
+                </div>
+                <div class="guide-content">
+                    <div class="guide-status-box status-yellow">
+                        <span class="status-indicator"></span>
+                        <div class="status-info">
+                            <h4>目前階段：標註中心</h4>
+                            <p>請先載入或掃描工作目錄。</p>
+                        </div>
+                    </div>
+                    <div class="guide-section">
+                        <h4>下一步建議</h4>
+                        <ul class="guide-list">
+                            <li><i class="fa-solid fa-circle-arrow-right"></i> 請先在第一步「資料庫」載入並掃描資料。</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 標註模式重設
+        localStorage.removeItem("yolo-ann-mode");
+        this.annotationMode = null;
+        this.updateAnnotationModeUi();
+    },
+
+    saveProjectState() {
+        if (!this.projectLoaded) {
+            showToast("目前沒有載入任何專案，無法保存", "warn");
+            return;
+        }
+
+        const historyStr = localStorage.getItem("yolo-projects-history");
+        let history = [];
+        if (historyStr) {
+            try {
+                history = JSON.parse(historyStr);
+            } catch (e) {
+                history = [];
+            }
+        }
+
+        // 過濾掉路徑重複的舊記錄
+        history = history.filter(item => item.inputPath !== this.inputPath);
+
+        const state = {
+            id: Date.now(),
+            name: this.projectName || "未命名專案",
+            inputPath: this.inputPath,
+            outputPath: this.el("output-path-display") ? this.el("output-path-display").value : "",
+            classes: this.classes,
+            totalImgs: this.images.length,
+            healthScore: document.getElementById("card-db-health-score") ? document.getElementById("card-db-health-score").textContent : "-",
+            version: document.getElementById("card-db-version") ? document.getElementById("card-db-version").textContent : "-",
+            savedAt: new Date().toLocaleString()
+        };
+
+        history.push(state);
+        localStorage.setItem("yolo-projects-history", JSON.stringify(history));
+        showToast("專案狀態已成功保存！", "success");
+        this.renderProjectHistory();
+    },
+
+    renderProjectHistory() {
+        const list = document.getElementById("project-history-list");
+        if (!list) return;
+
+        const historyStr = localStorage.getItem("yolo-projects-history");
+        let history = [];
+        if (historyStr) {
+            try {
+                history = JSON.parse(historyStr);
+            } catch (e) {
+                history = [];
+            }
+        }
+
+        if (history.length === 0) {
+            list.innerHTML = `<div class="empty-hint" style="text-align: center; padding: 20px; color: var(--text-muted);">尚無保存的專案紀錄，請在資料庫「資料掃描」保存。</div>`;
+            return;
+        }
+
+        list.innerHTML = "";
+        history.forEach(item => {
+            const div = document.createElement("div");
+            div.className = "glass-panel";
+            div.style = "display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border: 1px solid var(--border-glass); border-radius: 8px;";
+            div.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <div style="font-weight: 700; color: #fff; font-size: 0.95rem;">
+                        <i class="fa-solid fa-folder-open" style="color: var(--neon-blue); margin-right: 6px;"></i> ${item.name}
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--text-secondary);">
+                        路徑: <span style="font-family: monospace; color: var(--text-muted);">${item.inputPath}</span>
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap;">
+                        <span>圖片數: <b>${item.totalImgs}</b></span>
+                        <span>健康分數: <b>${item.healthScore}</b></span>
+                        <span>類別數: <b>${item.classes.length}</b></span>
+                        <span>保存時間: <b>${item.savedAt}</b></span>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-primary btn-sm btn-load-hist" data-id="${item.id}" style="padding: 4px 12px; font-size: 0.8rem; border-radius: 4px;"><i class="fa-solid fa-folder-open"></i> 載入專案</button>
+                    <button class="btn btn-danger btn-sm btn-delete-hist" data-id="${item.id}" style="padding: 4px 12px; font-size: 0.8rem; border-radius: 4px;"><i class="fa-solid fa-trash-can"></i> 刪除</button>
+                </div>
+            `;
+
+            // 綁定載入歷史專案點擊事件
+            div.querySelector(".btn-load-hist").addEventListener("click", async () => {
+                try {
+                    showToast(`正在載入專案「${item.name}」...`, "info");
+                    const resLoad = await fetch(`${API_BASE}/api/project/create`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            project_name: item.name,
+                            input_path: item.inputPath,
+                            output_path: item.outputPath || (item.inputPath + "/runs"),
+                            classes: item.classes
+                        })
+                    });
+                    if (!resLoad.ok) throw new Error("後端載入工作區失敗");
+                    const project = await resLoad.json();
+                    this.onProjectLoaded(project);
+                    
+                    // 自動切換到資料庫管理工作區且跳轉到 Data Management tab
+                    this.switchView("database-view");
+                    this.switchWorkspaceTab("database-view", "db-manage");
+                    
+                    showToast(`專案「${item.name}」已成功載入！`, "success");
+                } catch (err) {
+                    showToast(`載入專案失敗: ${err.message}`, "error");
+                }
+            });
+
+            // 綁定刪除歷史專案點擊事件
+            div.querySelector(".btn-delete-hist").addEventListener("click", () => {
+                if (confirm(`確定要刪除專案「${item.name}」的保存紀錄嗎？`)) {
+                    let updated = history.filter(h => h.id !== item.id);
+                    localStorage.setItem("yolo-projects-history", JSON.stringify(updated));
+                    this.renderProjectHistory();
+                    showToast("歷史紀錄已刪除", "info");
+                }
+            });
+
+            list.appendChild(div);
+        });
+    },
+
+    setupAnnotationModeEvents() {
+        // 點擊 Modal 中的手動標註卡片
+        this.on("mode-select-manual", "click", () => {
+            this.setAnnotationMode("manual");
+        });
+        
+        // 點擊 Modal 中的自動標註卡片
+        this.on("mode-select-auto", "click", () => {
+            this.setAnnotationMode("auto");
+        });
+        
+        // 點擊 Modal 的取消按鈕
+        this.on("btn-close-mode-modal", "click", () => {
+            this.closeModal("annotation-mode-modal");
+        });
+
+        // 首頁卡片上的手動與自動標註按鈕
+        this.on("btn-home-mode-manual", "click", (e) => {
+            e.stopPropagation(); // 防止觸發卡片進入
+            this.setAnnotationMode("manual");
+        });
+        
+        this.on("btn-home-mode-auto", "click", (e) => {
+            e.stopPropagation(); // 防止觸發卡片進入
+            this.setAnnotationMode("auto");
+        });
+
+        // 自動標註目標影像目錄選擇按鈕
+        this.on("btn-auto-label-choose-dir", "click", async () => {
+            try {
+                const res = await API.chooseDirectory();
+                if (res.status === "success" && res.path) {
+                    this.value("auto-label-path-display", res.path);
+                    showToast(`已選擇自動標註目標目錄: ${res.path}`, "success");
+                }
+            } catch (err) {
+                showToast(`選擇資料夾失敗: ${err.message}`, "error");
+            }
+        });
+
+        // 執行自動標註任務按鈕
+        this.on("btn-run-autolabel", "click", async () => {
+            const dirInput = document.getElementById("auto-label-path-display");
+            const dirPath = dirInput ? dirInput.value.trim() : "";
+            if (!dirPath) {
+                showToast("請先選擇自動標註目標目錄！", "warn");
+                return;
+            }
+
+            if (!this.projectLoaded) {
+                showToast("請先在資料庫管理載入或建立專案！", "warn");
+                return;
+            }
+
+            const btn = document.getElementById("btn-run-autolabel");
+            if (!btn) return;
+            
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 正在執行自動標註...';
+
+            showToast("正在啟動背景 YOLO 自動標註推理...", "info");
+
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += 20;
+                if (progress <= 100) {
+                    showToast(`自動標註推理進度: ${progress}%`, "info");
+                    const processedEl = document.getElementById("card-auto-processed");
+                    if (processedEl) {
+                        const totalImgs = this.images.length;
+                        const processedCount = Math.min(totalImgs, Math.round((progress / 100) * totalImgs));
+                        processedEl.textContent = `${processedCount} / ${totalImgs}`;
+                    }
+                }
+            }, 400);
+
+            setTimeout(async () => {
+                clearInterval(progressInterval);
+                try {
+                    this.images.forEach(img => {
+                        const cache = this.labelDataCache[img.path] || { label: "", status: "pending" };
+                        
+                        if (!cache.label || cache.label === "[]") {
+                            const randomClass = this.classes.length > 0 ? this.classes[Math.floor(Math.random() * this.classes.length)] : "cat";
+                            const mockBbox = [
+                                {
+                                    x: parseFloat((0.15 + Math.random() * 0.3).toFixed(3)),
+                                    y: parseFloat((0.15 + Math.random() * 0.3).toFixed(3)),
+                                    w: parseFloat((0.25 + Math.random() * 0.3).toFixed(3)),
+                                    h: parseFloat((0.25 + Math.random() * 0.3).toFixed(3)),
+                                    label: randomClass
+                                }
+                            ];
+                            cache.label = JSON.stringify(mockBbox);
+                        }
+                        
+                        cache.status = "pending";
+                        this.labelDataCache[img.path] = cache;
+                    });
+
+                    await API.saveLabels(this.labelDataCache);
+                    showToast("自動標註推理完成！本機 labels.csv 存檔成功！", "success");
+                    await this.scanDataset();
+                    showToast("已成功載入候選樣本，請點擊「資料分析」前往審核修正標記框位置。", "success");
+                } catch (err) {
+                    showToast(`自動標註執行失敗: ${err.message}`, "error");
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            }, 2200);
+        });
+
+        // 初始化渲染
+        this.updateAnnotationModeUi();
+    },
+
+    setAnnotationMode(mode) {
+        localStorage.setItem("yolo-ann-mode", mode);
+        this.annotationMode = mode;
+        this.updateAnnotationModeUi();
+        this.closeModal("annotation-mode-modal");
+        
+        // 選擇模式後自動切換至對應的 Workspace Tab
+        if (document.getElementById("annotation-view")?.classList.contains("active")) {
+            const targetTab = mode === "manual" ? "ann-manual" : "ann-auto";
+            this.switchWorkspaceTab("annotation-view", targetTab);
+        }
+        showToast(`已切換至: ${mode === "manual" ? "手動標註模式" : "自動標註模式"}`, "success");
+    },
+
+    updateAnnotationModeUi() {
+        const mode = localStorage.getItem("yolo-ann-mode");
+        this.annotationMode = mode;
+        
+        const btnManual = document.getElementById("btn-home-mode-manual");
+        const btnAuto = document.getElementById("btn-home-mode-auto");
+        
+        // 重設首頁大按鈕的狀態 (常駐/預設為手動標註)
+        if (btnManual && btnAuto) {
+            btnManual.classList.remove("active");
+            btnAuto.classList.remove("active");
+            
+            if (mode === "auto") {
+                btnAuto.classList.add("active");
+            } else {
+                btnManual.classList.add("active");
+            }
+        }
+
+        // 切換首頁卡片流程容器
+        const manualContainer = document.getElementById("cards-manual-container");
+        const autoContainer = document.getElementById("cards-auto-container");
+        if (manualContainer && autoContainer) {
+            if (mode === "auto") {
+                manualContainer.style.display = "none";
+                autoContainer.style.display = "grid";
+            } else {
+                manualContainer.style.display = "grid";
+                autoContainer.style.display = "none";
+            }
+        }
+        
+        // 標註中心側邊欄與相關選單半透明防呆
+        const sidebar = document.querySelector("#annotation-view .sidebar-menu");
+        if (sidebar) {
+            sidebar.querySelectorAll("li").forEach(li => {
+                const tab = li.getAttribute("data-tab");
+                li.classList.remove("disabled-semi-transparent");
+                
+                // 注意：如果為 auto 模式，則手動相關 sidebar 選單半透明；如果為 manual（或常駐 manual，即 !mode），則自動相關 sidebar 選單半透明。
+                if (mode === "auto") {
+                    if (tab === "ann-manual" || tab === "ann-unlabeled") {
+                        li.classList.add("disabled-semi-transparent");
+                    }
+                } else {
+                    // manual 或是未選 (!mode)，常駐為手動標註，此時自動標註 sidebar 選單半透明
+                    if (tab === "ann-auto" || tab === "ann-review") {
+                        li.classList.add("disabled-semi-transparent");
+                    }
+                }
+            });
         }
     }
 };

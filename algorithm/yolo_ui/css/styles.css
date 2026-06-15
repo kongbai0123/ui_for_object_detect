@@ -3685,3 +3685,186 @@ body:has(.workspace-view.active) .app-main {
     border: 1px dashed var(--border-glass);
     line-height: 1.4;
 }
+
+/* ==========================================================================
+   左右側邊欄與指南背景色改為質感白底
+   ========================================================================== */
+.workspace-sidebar,
+.workspace-guide,
+.label-sidebar,
+.label-toolbar,
+.inference-sidebar {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-right: 1px solid rgba(10, 10, 30, 0.08) !important;
+    border-left: 1px solid rgba(10, 10, 30, 0.08) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
+    color: #2a2a3e !important;
+}
+
+.workspace-sidebar .sidebar-header,
+.workspace-sidebar .sidebar-header span,
+.workspace-guide .guide-header,
+.workspace-guide .guide-header h3,
+.workspace-guide .guide-section h4,
+.label-sidebar .section-title,
+.label-sidebar .section-title-row .section-title,
+.inference-sidebar .section-title {
+    color: #111118 !important;
+    border-bottom-color: rgba(10, 10, 30, 0.08) !important;
+}
+
+.workspace-sidebar .sidebar-menu li {
+    color: #424266 !important;
+    transition: var(--transition-smooth);
+}
+
+.workspace-sidebar .sidebar-menu li:hover:not(.active) {
+    background: rgba(10, 10, 30, 0.04) !important;
+    color: #111118 !important;
+}
+
+.workspace-sidebar .sidebar-menu li.active {
+    background: rgba(0, 229, 255, 0.08) !important;
+    color: #007799 !important;
+    border-left: 3px solid #00a8cc !important;
+}
+
+.workspace-guide .guide-status-box.status-green,
+.workspace-guide .guide-status-box.status-yellow,
+.workspace-guide .guide-status-box.status-blue {
+    background: rgba(0, 0, 0, 0.02) !important;
+    border-color: rgba(10, 10, 30, 0.08) !important;
+}
+
+.workspace-guide .guide-section h4 {
+    border-left-color: #007799 !important;
+}
+
+.workspace-guide .guide-list,
+.workspace-guide .guide-list li,
+.workspace-guide .status-info p,
+.workspace-guide .guide-tip,
+.label-sidebar .info-item,
+.inference-sidebar label,
+.inference-sidebar span {
+    color: #424266 !important;
+}
+
+.label-sidebar .info-item span.val {
+    color: #111118 !important;
+}
+
+.label-sidebar .empty-hint,
+.inference-sidebar .empty-hint {
+    color: var(--text-muted) !important;
+}
+
+.label-sidebar .bbox-item {
+    background: rgba(10, 10, 30, 0.02) !important;
+    border: 1px solid rgba(10, 10, 30, 0.08) !important;
+    color: #2a2a3e !important;
+}
+
+.label-sidebar .bbox-item:hover {
+    background: rgba(10, 10, 30, 0.05) !important;
+}
+
+.label-sidebar .bbox-item.active {
+    background: rgba(0, 229, 255, 0.05) !important;
+    border-color: #00a8cc !important;
+}
+
+.label-sidebar .bbox-item span {
+    color: #2a2a3e !important;
+}
+
+.label-sidebar .class-item {
+    color: #2a2a3e !important;
+    background: rgba(10, 10, 30, 0.02) !important;
+    border: 1px solid rgba(10, 10, 30, 0.08) !important;
+}
+
+.label-sidebar .class-item:hover {
+    background: rgba(10, 10, 30, 0.05) !important;
+}
+
+.label-sidebar .class-item.active {
+    background: rgba(0, 229, 255, 0.05) !important;
+    border-color: #00a8cc !important;
+}
+
+.label-toolbar .tool-btn {
+    color: #424266 !important;
+}
+
+.label-toolbar .tool-btn:hover {
+    background: rgba(10, 10, 30, 0.04) !important;
+    color: #111118 !important;
+}
+
+.label-toolbar .tool-btn.active {
+    color: #007799 !important;
+    background: rgba(0, 229, 255, 0.08) !important;
+    border-color: rgba(0, 229, 255, 0.25) !important;
+}
+
+.label-toolbar .tool-divider {
+    border-color: rgba(10, 10, 30, 0.08) !important;
+}
+
+.workspace-guide .guide-tip {
+    background: rgba(0, 0, 0, 0.01) !important;
+    border-color: rgba(10, 10, 30, 0.08) !important;
+}
+
+/* ==========================================================================
+   半透明防呆禁用樣式
+   ========================================================================== */
+.disabled-semi-transparent {
+    opacity: 0.35 !important;
+    user-select: none !important;
+}
+
+/* ==========================================================================
+   首頁標註模式大按鈕樣式
+   ========================================================================== */
+.mode-toggle-btn {
+    transition: var(--transition-smooth);
+    background: rgba(255, 255, 255, 0.03) !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border-glass) !important;
+    opacity: 0.6;
+}
+.mode-toggle-btn:hover {
+    opacity: 0.9;
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: var(--neon-blue) !important;
+}
+.mode-toggle-btn.active {
+    opacity: 1 !important;
+    background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple)) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(0, 229, 255, 0.3) !important;
+    box-shadow: var(--shadow-glow-blue);
+}
+
+/* Light Mode 大按鈕適配 */
+body.light-mode .mode-toggle-btn {
+    background: rgba(0, 0, 0, 0.03) !important;
+    color: #424266 !important;
+    border-color: rgba(0, 0, 0, 0.08) !important;
+    opacity: 0.6;
+}
+body.light-mode .mode-toggle-btn:hover {
+    background: rgba(0, 0, 0, 0.05) !important;
+    border-color: #007799 !important;
+}
+body.light-mode .mode-toggle-btn.active {
+    opacity: 1 !important;
+    background: #007799 !important;
+    color: #ffffff !important;
+    border-color: #006688 !important;
+    box-shadow: 0 4px 12px rgba(0, 119, 153, 0.25);
+}

@@ -50,11 +50,21 @@
                         </p>
                     </div>
 
-                    <!-- 4 大流程大型卡片 (水平排列) -->
-                    <div class="flow-cards-container">
+                    <!-- 標註模式切換 (手動標註/自動標註) -->
+                    <div class="mode-toggle-wrapper" style="text-align: center; margin: 10px auto 25px auto; display: flex; justify-content: center; gap: 16px;">
+                        <button class="btn mode-toggle-btn active" id="btn-home-mode-manual" style="padding: 10px 24px; font-size: 0.95rem; border-radius: 30px; display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer;">
+                            <i class="fa-solid fa-marker"></i> 手動標註
+                        </button>
+                        <button class="btn mode-toggle-btn" id="btn-home-mode-auto" style="padding: 10px 24px; font-size: 0.95rem; border-radius: 30px; display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer;">
+                            <i class="fa-solid fa-robot"></i> 自動標註
+                        </button>
+                    </div>
+
+                    <!-- 手動標註流程 (Manual flow) -->
+                    <div class="flow-cards-container" id="cards-manual-container">
                         <!-- 卡片 1: 資料庫 -->
-                        <div class="flow-card current-stage" id="card-database">
-                            <div class="flow-card-badge status-blue">進行中</div>
+                        <div class="flow-card" id="card-database">
+                            <div class="flow-card-badge status-gray">未開始</div>
                             <div class="flow-card-icon"><i class="fa-solid fa-database"></i></div>
                             <div class="flow-card-content">
                                 <h3>1. 資料庫</h3>
@@ -62,11 +72,11 @@
                                 <p class="flow-card-desc">管理原始資料、掃描、清洗、健康檢查與資料版本</p>
                                 <div class="flow-card-metrics">
                                     <div class="metric-row"><span>圖片總數：</span><b id="card-db-total-imgs">0</b></div>
-                                    <div class="metric-row"><span>健康分數：</span><b id="card-db-health-score" class="success-color">92%</b></div>
-                                    <div class="metric-row"><span>目前版本：</span><b id="card-db-version">data_v0.3</b></div>
+                                    <div class="metric-row"><span>健康分數：</span><b id="card-db-health-score">-</b></div>
+                                    <div class="metric-row"><span>目前版本：</span><b id="card-db-version">-</b></div>
                                 </div>
                                 <div class="flow-card-guide">
-                                    <i class="fa-solid fa-circle-check info-icon"></i> 建議：資料狀態良好，可進入標註中心。
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先掃描或載入專案。
                                 </div>
                             </div>
                             <button class="btn btn-primary btn-enter-flow" data-target="database-view">進入資料庫</button>
@@ -81,12 +91,12 @@
                                 <p class="flow-card-sub">Annotation Center</p>
                                 <p class="flow-card-desc">手動標註、自動標註、標註品質檢查與候選審核</p>
                                 <div class="flow-card-metrics">
-                                    <div class="metric-row"><span>未標註：</span><b id="card-ann-unlabeled">320</b></div>
-                                    <div class="metric-row"><span>待審核：</span><b id="card-ann-pending">85</b></div>
-                                    <div class="metric-row"><span>已確認：</span><b id="card-ann-verified">892</b></div>
+                                    <div class="metric-row" id="row-ann-unlabeled"><span>未標註：</span><b id="card-ann-unlabeled">0</b></div>
+                                    <div class="metric-row" id="row-ann-pending"><span>待審核：</span><b id="card-ann-pending">0</b></div>
+                                    <div class="metric-row" id="row-ann-verified"><span>已確認：</span><b id="card-ann-verified">0</b></div>
                                 </div>
                                 <div class="flow-card-guide">
-                                    <i class="fa-solid fa-triangle-exclamation warn-icon"></i> 建議：先審核 85 張候選標籤。
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先掃描或載入專案。
                                 </div>
                             </div>
                             <button class="btn btn-secondary btn-enter-flow" data-target="annotation-view">進入標註中心</button>
@@ -101,12 +111,12 @@
                                 <p class="flow-card-sub">Sample Distribution</p>
                                 <p class="flow-card-desc">切分 Train/Val/Test、類別與場景平衡、資料增強及匯出</p>
                                 <div class="flow-card-metrics">
-                                    <div class="metric-row"><span>集分配 (T/V/T)：</span><b>70 / 20 / 10 %</b></div>
-                                    <div class="metric-row"><span>洩漏檢查：</span><b class="success-color" id="card-dist-leakage">通過</b></div>
-                                    <div class="metric-row"><span>類別平衡：</span><b class="warn-color" id="card-dist-balance">警告</b></div>
+                                    <div class="metric-row"><span>集分配 (T/V/T)：</span><b>0 / 0 / 0 %</b></div>
+                                    <div class="metric-row"><span>洩漏檢查：</span><b id="card-dist-leakage">-</b></div>
+                                    <div class="metric-row"><span>類別平衡：</span><b id="card-dist-balance">-</b></div>
                                 </div>
                                 <div class="flow-card-guide">
-                                    <i class="fa-solid fa-lightbulb guide-icon"></i> 建議：open 類別過少，建議過抽樣。
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先完成標註。
                                 </div>
                             </div>
                             <button class="btn btn-secondary btn-enter-flow" data-target="distribution-view">進入樣本分配</button>
@@ -121,18 +131,109 @@
                                 <p class="flow-card-sub">Model Training</p>
                                 <p class="flow-card-desc">模型訓練配置、即時監控、評估、錯誤分析與導出</p>
                                 <div class="flow-card-metrics">
-                                    <div class="metric-row"><span>最佳 mAP50：</span><b id="card-train-map">0.91</b></div>
-                                    <div class="metric-row"><span>精準/召回：</span><b>0.88 / 0.84</b></div>
-                                    <div class="metric-row"><span>最近任務：</span><b id="card-train-run">run_003</b></div>
+                                    <div class="metric-row"><span>最佳 mAP50：</span><b id="card-train-map">-</b></div>
+                                    <div class="metric-row"><span>精準/召回：</span><b>- / -</b></div>
+                                    <div class="metric-row"><span>最近任務：</span><b id="card-train-run">-</b></div>
                                 </div>
                                 <div class="flow-card-guide">
-                                    <i class="fa-solid fa-circle-exclamation error-icon"></i> 建議：Recall 偏低，請檢查漏檢樣本。
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先分配樣本。
                                 </div>
                             </div>
                             <button class="btn btn-secondary btn-enter-flow" data-target="training-workflow-view">進入模型訓練</button>
                         </div>
                     </div>
-                </div>
+
+                    <!-- 自動標註流程 (Auto labeling flow) -->
+                    <div class="flow-cards-container" id="cards-auto-container" style="display: none;">
+                        <!-- 卡片 1: 資料庫 -->
+                        <div class="flow-card" id="card-auto-db">
+                            <div class="flow-card-badge status-gray">未開始</div>
+                            <div class="flow-card-icon"><i class="fa-solid fa-database"></i></div>
+                            <div class="flow-card-content">
+                                <h3>1. 資料庫</h3>
+                                <p class="flow-card-sub">Dataset Database</p>
+                                <p class="flow-card-desc">管理原始資料、掃描、清洗與健康度檢查，設定自動標註影像路徑</p>
+                                <div class="flow-card-metrics">
+                                    <div class="metric-row"><span>圖片總數：</span><b class="card-auto-total-imgs">0</b></div>
+                                    <div class="metric-row"><span>健康分數：</span><b id="card-auto-health-score">-</b></div>
+                                    <div class="metric-row"><span>目前版本：</span><b>-</b></div>
+                                </div>
+                                <div class="flow-card-guide">
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先掃描或載入專案。
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-enter-flow" data-target="database-view">進入資料庫</button>
+                        </div>
+
+                        <!-- 卡片 2: 自動標註 -->
+                        <div class="flow-card" id="card-auto-run">
+                            <div class="flow-card-badge status-gray">未開始</div>
+                            <div class="flow-card-icon"><i class="fa-solid fa-robot"></i></div>
+                            <div class="flow-card-content">
+                                <h3>2. 自動標註</h3>
+                                <p class="flow-card-sub">Auto Labeling</p>
+                                <p class="flow-card-desc">配置推理模型與信心度閾值，執行背景批次自動推理標記</p>
+                                <div class="flow-card-metrics">
+                                    <div class="metric-row"><span>標記模型：</span><b>YOLOv8x (預設)</b></div>
+                                    <div class="metric-row"><span>信心度門檻：</span><b>0.25</b></div>
+                                    <div class="metric-row"><span>已處理：</span><b id="card-auto-processed">0 / 0</b></div>
+                                </div>
+                                <div class="flow-card-guide">
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先設定目錄並啟動自動標註。
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary btn-enter-flow" data-target="annotation-view" data-tab="ann-auto">進入自動標註</button>
+                        </div>
+
+                        <!-- 卡片 3: 資料分析 -->
+                        <div class="flow-card" id="card-auto-analysis">
+                            <div class="flow-card-badge status-gray">未開始</div>
+                            <div class="flow-card-icon"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+                            <div class="flow-card-content">
+                                <h3>3. 資料分析</h3>
+                                <p class="flow-card-sub">Data Analysis</p>
+                                <p class="flow-card-desc">檢查自動標註的樣本是否理想，不理想則可快速載入並手動修改標記框位置</p>
+                                <div class="flow-card-metrics">
+                                    <div class="metric-row"><span>待審核數：</span><b class="card-auto-pending-count">0</b></div>
+                                    <div class="metric-row"><span>已確認數：</span><b class="card-auto-verified-count">0</b></div>
+                                    <div class="metric-row"><span>樣本健康度：</span><b id="card-auto-analysis-health">-</b></div>
+                                </div>
+                                <div class="flow-card-guide">
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：不理想的自動標註樣本，請手動調整以修正。
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary btn-enter-flow" data-target="annotation-view" data-tab="ann-review">進入資料分析</button>
+                        </div>
+
+                        <!-- 卡片 4: 模型訓練 -->
+                        <div class="flow-card" id="card-auto-train">
+                            <div class="flow-card-badge status-gray">未開始</div>
+                            <div class="flow-card-icon"><i class="fa-solid fa-dumbbell"></i></div>
+                            <div class="flow-card-content">
+                                <h3>4. 模型訓練</h3>
+                                <p class="flow-card-sub">Model Training</p>
+                                <p class="flow-card-desc">模型訓練配置、即時監控、評估、錯誤分析與導出</p>
+                                <div class="flow-card-metrics">
+                                    <div class="metric-row"><span>最佳 mAP50：</span><b id="card-auto-train-map">-</b></div>
+                                    <div class="metric-row"><span>精準/召回：</span><b>- / -</b></div>
+                                    <div class="metric-row"><span>最近任務：</span><b id="card-auto-train-run">-</b></div>
+                                </div>
+                                <div class="flow-card-guide">
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先完成資料分析與審核。
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary btn-enter-flow" data-target="training-workflow-view" data-tab="train-config">進入模型訓練</button>
+                        </div>
+                    </div>
+                    </div>
+                    
+                    <!-- 專案歷史紀錄區域 -->
+                    <div class="glass-panel" style="max-width: 1000px; margin: 24px auto 0 auto; padding: 20px;" id="project-history-section">
+                        <div class="section-title"><i class="fa-solid fa-clock-rotate-left"></i> 已保存的專案歷史紀錄</div>
+                        <div id="project-history-list" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
+                            <div class="empty-hint" style="text-align: center; padding: 20px; color: var(--text-muted);">尚無保存的專案紀錄，請在資料庫「資料掃描」保存。</div>
+                        </div>
+                    </div>
             </section>
 
 
@@ -148,13 +249,9 @@
                             <span>資料庫管理</span>
                         </div>
                         <ul class="sidebar-menu">
-                            <li class="menu-item active" data-tab="db-overview"><i class="fa-solid fa-chart-pie"></i> 資料總覽 (Overview)</li>
-                            <li class="menu-item" data-tab="db-import"><i class="fa-solid fa-cloud-arrow-up"></i> 資料匯入 (Import)</li>
-                            <li class="menu-item" data-tab="db-scan"><i class="fa-solid fa-folder-open"></i> 資料掃描 (Scan)</li>
-                            <li class="menu-item" data-tab="db-clean"><i class="fa-solid fa-broom"></i> 資料清洗 (Clean)</li>
-                            <li class="menu-item" data-tab="db-health"><i class="fa-solid fa-shield-heart"></i> 健康檢查 (Health Check)</li>
+                            <li class="menu-item active" data-tab="db-manage"><i class="fa-solid fa-list-check"></i> 資料管理與總覽 (Data Management)</li>
                             <li class="menu-item" data-tab="db-classes"><i class="fa-solid fa-tags"></i> 類別管理 (Class Manager)</li>
-                            <li class="menu-item" data-tab="db-version"><i class="fa-solid fa-code-branch"></i> 資料版本 (Data Version)</li>
+                            <li class="menu-item" data-tab="db-health"><i class="fa-solid fa-shield-heart"></i> 健康檢查 (Health Check)</li>
                         </ul>
                         <div class="sidebar-footer">
                             <button class="btn btn-secondary btn-back-home" style="width: 100%;"><i class="fa-solid fa-arrow-left"></i> 返回首頁</button>
@@ -163,137 +260,131 @@
 
                     <!-- 中間 Main Workspace -->
                     <div class="workspace-main">
-                        <!-- Tab: Overview (大圖牆與統計) -->
-                        <div class="workspace-tab-content" data-tab-content="db-overview" style="display: block;">
+                        <!-- Tab: Data Management (合併 資料掃描, 資料匯入, 資料清洗, 資料總覽) -->
+                        <div class="workspace-tab-content" data-tab-content="db-manage" style="display: block;">
                             <div class="workspace-tab-header">
-                                <h2>資料總覽與大圖牆</h2>
-                                <p>視覺化分析目前專案的影像類別分佈與標註狀態，並過濾和稽核所有已標籤影像。</p>
+                                <h2>資料管理與總覽</h2>
+                                <p>設定工作目錄、上傳匯入影像、清洗異常資料，並即時查看資料分佈與大圖牆。</p>
                             </div>
-                            <div class="grid-layout" style="grid-template-columns: 320px 1fr; height: calc(100vh - 190px); overflow: hidden; gap: 16px;">
-                                <div class="glass-panel" style="overflow-y: auto; gap: 12px; padding: 16px;">
+                            
+                            <!-- 頂部操作區 (Grid Layout: 左側目錄設定，右側匯入與清洗) -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+                                <!-- 左邊：目錄設定與掃描 -->
+                                <div class="glass-panel" style="padding: 16px;">
+                                    <div class="section-title"><i class="fa-solid fa-folder-tree"></i> 工作目錄配置</div>
+                                    <div class="form-group" style="margin-top: 10px;">
+                                        <label for="input-path-display">Input 資料夾路徑 (工作資料夾)</label>
+                                        <div class="input-with-btn">
+                                            <input type="text" id="input-path-display" readonly placeholder="C:\yolo">
+                                            <button class="btn-icon" id="btn-data-choose-dir" title="瀏覽目錄"><i class="fa-solid fa-folder"></i></button>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="output-path-display">Output 訓練輸出路徑 (預設為 input 底下的 runs/)</label>
+                                        <div class="input-with-btn">
+                                            <input type="text" id="output-path-display" placeholder="C:\yolo\runs">
+                                            <button class="btn-icon" id="btn-data-choose-output-dir" title="瀏覽目錄"><i class="fa-solid fa-folder"></i></button>
+                                        </div>
+                                    </div>
+                                    <div class="action-row" style="margin-top: 12px; display: flex; gap: 8px;">
+                                        <button class="btn btn-primary" id="btn-scan-data" style="padding: 6px 12px; font-size: 0.82rem;"><i class="fa-solid fa-arrows-rotate"></i> 掃描目錄</button>
+                                        <button class="btn btn-success" id="btn-save-project-state" style="padding: 6px 12px; font-size: 0.82rem;"><i class="fa-solid fa-floppy-disk"></i> 保存目前專案紀錄</button>
+                                        <button class="btn btn-danger" id="btn-clear-data" style="padding: 6px 12px; font-size: 0.82rem;"><i class="fa-solid fa-trash-can"></i> 清除目錄暫存</button>
+                                    </div>
+                                </div>
+                                
+                                <!-- 右邊：匯入與清洗 -->
+                                <div style="display: flex; flex-direction: column; gap: 12px;">
+                                    <!-- 匯入小區塊 -->
+                                    <div class="glass-panel" style="padding: 12px 16px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                                        <div class="section-title" style="font-size: 0.85rem;"><i class="fa-solid fa-cloud-arrow-up"></i> ZIP / 資料夾 拖曳匯入區</div>
+                                        <div class="drag-drop-area" id="drag-area" style="padding: 12px; min-height: 80px; margin-top: 8px; border: 1px dashed var(--border-glass); border-radius: 6px; text-align: center; cursor: pointer;">
+                                            <i class="fa-solid fa-cloud-arrow-up" style="font-size: 1.4rem; color: var(--neon-blue); margin-bottom: 4px;"></i>
+                                            <span style="font-size: 0.76rem; display: block; color: var(--text-secondary);">拖曳圖片或 ZIP 檔至此，或點選瀏覽</span>
+                                            <input type="file" id="file-input-dummy" style="display: none;" multiple>
+                                        </div>
+                                        <div style="text-align: right; margin-top: 6px;">
+                                            <button class="btn btn-secondary btn-sm" id="btn-import-trigger" style="padding: 4px 10px; font-size: 0.72rem;"><i class="fa-solid fa-file-import"></i> 瀏覽並選擇檔案</button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 清洗小區塊 -->
+                                    <div class="glass-panel" style="padding: 12px 16px;">
+                                        <div class="section-title" style="font-size: 0.85rem; margin-bottom: 6px;"><i class="fa-solid fa-broom"></i> 智慧清洗工具</div>
+                                        <div style="display: flex; gap: 12px;">
+                                            <div style="flex: 1; text-align: center; background: rgba(0,0,0,0.12); padding: 6px; border-radius: 6px; border: 1px solid var(--border-glass);">
+                                                <div style="font-size: 0.72rem; color: var(--text-muted);">重複圖片</div>
+                                                <strong id="clean-v-duplicate" style="color: var(--neon-blue); font-size: 0.95rem;">0</strong>
+                                            </div>
+                                            <div style="flex: 1; text-align: center; background: rgba(0,0,0,0.12); padding: 6px; border-radius: 6px; border: 1px solid var(--border-glass);">
+                                                <div style="font-size: 0.72rem; color: var(--text-muted);">破損圖片</div>
+                                                <strong id="clean-v-broken" style="color: var(--neon-red); font-size: 0.95rem;">0</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 下半部：資料總覽 (Grid Layout: 左側圖表統計，右側大圖牆) -->
+                            <div style="display: grid; grid-template-columns: 280px 1fr; gap: 16px; margin-top: 16px; height: calc(100vh - 365px); min-height: 280px; overflow: hidden;">
+                                <!-- 左側：數據統計 -->
+                                <div class="glass-panel" style="overflow-y: auto; gap: 12px; padding: 16px; display: flex; flex-direction: column;">
                                     <div class="section-title"><i class="fa-solid fa-chart-pie"></i> 類別數據統計</div>
-                                    <div class="chart-container-div" style="height: 200px; margin-bottom: 12px; background: rgba(0,0,0,0.15);">
+                                    <div class="chart-container-div" style="height: 120px; background: rgba(0,0,0,0.15); border-radius: 6px; display: flex; align-items: center; justify-content: center; position: relative;">
                                         <canvas id="explorer-chart"></canvas>
                                     </div>
-                                    <div class="progress-section">
-                                        <div class="progress-title-row">
-                                            <span>資料集整體標註率</span>
+                                    <div class="progress-section" style="border: none; padding: 0; margin: 0;">
+                                        <div class="progress-title-row" style="font-size: 0.78rem;">
+                                            <span>資料集標註率</span>
                                             <b id="explorer-progress-pct">0%</b>
                                         </div>
-                                        <div class="progress-bar-container">
+                                        <div class="progress-bar-container" style="height: 6px; background: rgba(255,255,255,0.05);">
                                             <div class="progress-bar-fill" id="explorer-progress-bar" style="width: 0%;"></div>
                                         </div>
-                                        <div class="info-list" style="margin-top: 12px; font-size: 0.8rem;">
-                                            <div class="info-item" style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>已完成標註：</span><span class="val badge done" id="exp-lbl-done">0</span></div>
-                                            <div class="info-item" style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>待確認標記：</span><span class="val badge pending" id="exp-lbl-pending">0</span></div>
-                                            <div class="info-item" style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>已忽略圖片：</span><span class="val badge ignored" id="exp-lbl-ignored">0</span></div>
+                                        <div class="info-list" style="margin-top: 8px; font-size: 0.72rem; display: flex; flex-direction: column; gap: 4px;">
+                                            <div class="info-item" style="display: flex; justify-content: space-between;"><span>已完成標註：</span><span class="val badge done" id="exp-lbl-done">0</span></div>
+                                            <div class="info-item" style="display: flex; justify-content: space-between;"><span>待確認標記：</span><span class="val badge pending" id="exp-lbl-pending">0</span></div>
+                                            <div class="info-item" style="display: flex; justify-content: space-between;"><span>已忽略圖片：</span><span class="val badge ignored" id="exp-lbl-ignored">0</span></div>
                                         </div>
                                     </div>
                                 </div>
+                                
+                                <!-- 右側：大圖牆 -->
                                 <div class="glass-panel" style="display: flex; flex-direction: column; overflow: hidden; padding: 16px;">
-                                    <div class="section-title-row" style="margin-bottom: 8px;">
+                                    <div class="section-title-row" style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
                                         <div class="section-title"><i class="fa-solid fa-images"></i> 標籤稽核大圖牆</div>
-                                        <div class="btn-group" id="gallery-filter-group" style="padding: 2px;">
-                                            <button class="btn-toggle active" data-filter="all">全部</button>
-                                            <button class="btn-toggle" data-filter="done">已完成</button>
-                                            <button class="btn-toggle" data-filter="pending">待確認</button>
-                                            <button class="btn-toggle" data-filter="ignore">已忽略</button>
+                                        <div class="btn-group" id="gallery-filter-group" style="padding: 2px; display: flex; gap: 4px;">
+                                            <button class="btn-toggle active" data-filter="all" style="padding: 2px 8px; font-size: 0.72rem;">全部</button>
+                                            <button class="btn-toggle" data-filter="done" style="padding: 2px 8px; font-size: 0.72rem;">已完成</button>
+                                            <button class="btn-toggle" data-filter="pending" style="padding: 2px 8px; font-size: 0.72rem;">待確認</button>
+                                            <button class="btn-toggle" data-filter="ignore" style="padding: 2px 8px; font-size: 0.72rem;">已忽略</button>
                                         </div>
                                     </div>
-                                    <div class="gallery-scroll-container" id="gallery-container" style="flex-grow: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; padding: 4px;">
-                                        <div class="empty-hint">載入資料庫中...</div>
+                                    <div class="gallery-scroll-container" id="gallery-container" style="flex-grow: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; padding: 4px;">
+                                        <div class="empty-hint">請先載入專案以查看大圖牆。</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Tab: Import (資料匯入) -->
-                        <div class="workspace-tab-content" data-tab-content="db-import" style="display: none;">
+                        <!-- Tab: Class Manager (類別管理) -->
+                        <div class="workspace-tab-content" data-tab-content="db-classes" style="display: none;">
                             <div class="workspace-tab-header">
-                                <h2>資料匯入</h2>
-                                <p>將您的原始圖片（.jpg、.png等）或包含圖片的 .zip 壓縮包上傳至平台工作目錄。</p>
+                                <h2>類別管理</h2>
+                                <p>新增或編輯資料集要辨識的模型類別，這些設定會自動關聯到標註中心與模型訓練。</p>
                             </div>
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-cloud-arrow-up"></i> ZIP / 資料夾 拖曳匯入區</div>
-                                <div class="drag-drop-area" id="drag-area" style="padding: 60px 20px; min-height: 250px;">
-                                    <i class="fa-solid fa-cloud-arrow-up cloud-icon" style="font-size: 3.5rem;"></i>
-                                    <h3 style="margin-top: 16px;">ZIP / 資料夾 拖曳匯入區</h3>
-                                    <p style="color: var(--text-secondary);">支援 .zip 壓縮檔或圖片直接拖曳</p>
-                                    <span class="file-support-hint">支援格式：.jpg, .png, .bmp, .jpeg</span>
-                                    <input type="file" id="file-input-dummy" style="display: none;" multiple>
+                                <div class="section-title-row">
+                                    <div class="section-title"><i class="fa-solid fa-tags"></i> 現有辨識類別 (Classes)</div>
+                                    <button class="btn btn-primary btn-sm" id="btn-train-add-class"><i class="fa-solid fa-plus"></i> 新增類別</button>
                                 </div>
-                                <div class="action-row" style="justify-content: flex-end;">
-                                    <button class="btn btn-secondary" id="btn-import-trigger"><i class="fa-solid fa-file-import"></i> 瀏覽並選擇檔案</button>
+                                <div class="tag-cloud" id="data-class-tags" style="padding: 16px; background: rgba(0,0,0,0.15); border-radius: 12px; min-height: 120px;">
+                                    <span class="empty-hint">尚未載入專案</span>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Tab: Scan (資料掃描) -->
-                        <div class="workspace-tab-content" data-tab-content="db-scan" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>目錄設定與資料掃描</h2>
-                                <p>配置您的專案輸入/輸出目錄，並掃描工作目錄下的影像檔案結構與標籤。</p>
-                            </div>
-                            <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-folder-tree"></i> 工作目錄配置</div>
-                                <div class="form-group">
-                                    <label for="input-path-display">Input 資料夾路徑 (工作資料夾)</label>
-                                    <div class="input-with-btn">
-                                        <input type="text" id="input-path-display" readonly placeholder="C:\yolo">
-                                        <button class="btn-icon" id="btn-data-choose-dir" title="瀏覽目錄"><i class="fa-solid fa-folder"></i></button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="output-path-display">Output 訓練輸出路徑 (預設為 input 底下的 runs/)</label>
-                                    <div class="input-with-btn">
-                                        <input type="text" id="output-path-display" placeholder="C:\yolo\runs">
-                                        <button class="btn-icon" id="btn-data-choose-output-dir" title="瀏覽目錄"><i class="fa-solid fa-folder"></i></button>
-                                    </div>
-                                    <small class="help-text">系統會自動於每次訓練時，在此目錄下建立獨立的時間標記資料夾。</small>
-                                </div>
-                                <div class="action-row" style="margin-top: 20px;">
-                                    <button class="btn btn-primary" id="btn-scan-data"><i class="fa-solid fa-arrows-rotate"></i> 掃描並載入資料目錄</button>
-                                    <button class="btn btn-danger" id="btn-clear-data"><i class="fa-solid fa-trash-can"></i> 清除目錄暫存</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Clean (資料清洗) -->
-                        <div class="workspace-tab-content" data-tab-content="db-clean" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>資料清洗</h2>
-                                <p>自動排除不合規或有缺陷的影像，以優化資料集品質。</p>
-                            </div>
-                            <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-broom"></i> 智慧清洗工具</div>
-                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
-                                    <div class="stat-card">
-                                        <span class="stat-val" style="color: var(--neon-blue);" id="clean-v-duplicate">0</span>
-                                        <span class="stat-label">重複圖片數</span>
-                                        <button class="btn btn-secondary btn-sm" style="margin-top: 8px;">偵測重複圖片</button>
-                                    </div>
-                                    <div class="stat-card">
-                                        <span class="stat-val" style="color: var(--neon-red);" id="clean-v-broken">0</span>
-                                        <span class="stat-label">破損圖片數</span>
-                                        <button class="btn btn-secondary btn-sm" style="margin-top: 8px;">偵測損毀檔案</button>
-                                    </div>
-                                </div>
-                                <div class="progress-section" style="margin-top: 16px; display: none;" id="clean-progress-area">
-                                    <div class="progress-title-row">
-                                        <span>清洗任務進度</span>
-                                        <span>75%</span>
-                                    </div>
-                                    <div class="progress-bar-container">
-                                        <div class="progress-bar-fill" style="width: 75%;"></div>
-                                    </div>
-                                </div>
-                                <div style="padding: 12px; background: rgba(0,229,255,0.03); border: 1px solid rgba(0,229,255,0.1); border-radius: 8px; margin-top: 12px; font-size: 0.82rem;">
-                                    <i class="fa-solid fa-shield-halved success-color" style="margin-right: 6px;"></i> 智慧過濾已自動排除：<b>runs / cache / temp / export</b> 等非訓練目錄。
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Health Check (資料健康檢查，原 ds-checker-modal 內容嵌入) -->
+                        <!-- Tab: Health Check (資料健康檢查) -->
                         <div class="workspace-tab-content" data-tab-content="db-health" style="display: none;">
                             <div class="workspace-tab-header">
                                 <h2>資料集健康檢查</h2>
@@ -308,7 +399,7 @@
                                                 <circle class="progress-ring-bg" stroke="#2a2a3e" stroke-width="8" fill="transparent" r="42" cx="50" cy="50" />
                                                 <circle class="progress-ring-bar" id="ds-health-ring" stroke="var(--neon-green)" stroke-width="8" stroke-linecap="round" fill="transparent" r="42" cx="50" cy="50" stroke-dasharray="263.89" stroke-dashoffset="0" />
                                             </svg>
-                                            <span class="ring-val" id="ds-health-score-val" style="font-size: 1.6rem; font-weight: 800; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">100</span>
+                                            <span class="ring-val" id="ds-health-score-val" style="font-size: 1.6rem; font-weight: 800; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">-</span>
                                         </div>
                                         <span style="font-size: 0.8rem; color: var(--text-muted); margin-top: 10px;">資料健康分數</span>
                                     </div>
@@ -369,71 +460,6 @@
                                 </div>
                                 <div class="action-row" style="margin-top: 16px; justify-content: flex-end;">
                                     <button class="btn btn-secondary" id="btn-ds-checker-refresh"><i class="fa-solid fa-arrows-rotate"></i> 重新分析資料集</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Class Manager (類別管理) -->
-                        <div class="workspace-tab-content" data-tab-content="db-classes" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>類別管理</h2>
-                                <p>新增或編輯資料集要辨識的模型類別，這些設定會自動關聯到標註中心與模型訓練。</p>
-                            </div>
-                            <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title-row">
-                                    <div class="section-title"><i class="fa-solid fa-tags"></i> 現有辨識類別 (Classes)</div>
-                                    <button class="btn btn-primary btn-sm" id="btn-train-add-class"><i class="fa-solid fa-plus"></i> 新增類別</button>
-                                </div>
-                                <div class="tag-cloud" id="data-class-tags" style="padding: 16px; background: rgba(0,0,0,0.15); border-radius: 12px; min-height: 120px;">
-                                    <span class="empty-hint">載入類別中...</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Data Version (資料版本) -->
-                        <div class="workspace-tab-content" data-tab-content="db-version" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>資料版本控制</h2>
-                                <p>為當前資料庫的快照建立不可變的版本標籤，讓模型訓練具有可追溯性。</p>
-                            </div>
-                            <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-code-branch"></i> 資料版本歷史</div>
-                                <table class="results-table" style="width: 100%;">
-                                    <thead>
-                                        <tr>
-                                            <th>版本標記</th>
-                                            <th>圖片總數</th>
-                                            <th>建立時間</th>
-                                            <th>狀態</th>
-                                            <th>操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>data_v0.3</td>
-                                            <td>1,295 張</td>
-                                            <td>2026-06-12 11:30</td>
-                                            <td><span class="val badge done">目前版本</span></td>
-                                            <td><button class="btn btn-secondary btn-sm" disabled>套用中</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td>data_v0.2</td>
-                                            <td>1,150 張</td>
-                                            <td>2026-06-10 14:20</td>
-                                            <td><span class="val badge pending">已封存</span></td>
-                                            <td><button class="btn btn-secondary btn-sm">載入此版本</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td>data_v0.1</td>
-                                            <td>820 張</td>
-                                            <td>2026-06-08 09:15</td>
-                                            <td><span class="val badge pending">已封存</span></td>
-                                            <td><button class="btn btn-secondary btn-sm">載入此版本</button></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                <div class="action-row" style="justify-content: flex-end; margin-top: 16px;">
-                                    <button class="btn btn-primary" id="btn-create-data-version"><i class="fa-solid fa-camera"></i> 建立新版本快照</button>
                                 </div>
                             </div>
                         </div>
@@ -616,6 +642,14 @@
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
                                 <div class="section-title"><i class="fa-solid fa-robot"></i> 自動標記引擎配置</div>
                                 <div class="form-group">
+                                    <label for="auto-label-path-display">自動標註目標影像目錄 (Target Directory)</label>
+                                    <div class="input-with-btn">
+                                        <input type="text" id="auto-label-path-display" placeholder="例如: C:/unlabeled_images">
+                                        <button class="btn-icon" id="btn-auto-label-choose-dir" title="選擇資料夾"><i class="fa-solid fa-folder-open"></i></button>
+                                    </div>
+                                    <small class="help-text">請指定要執行自動偵測標註的圖片資料夾。</small>
+                                </div>
+                                <div class="form-group">
                                     <label>選擇自動標記基底模型</label>
                                     <select style="width: 100%;">
                                         <option>YOLOv8x-cls COCO 預訓練權重</option>
@@ -740,24 +774,15 @@
                                 <span class="status-indicator"></span>
                                 <div class="status-info">
                                     <h4>目前階段：標註中心</h4>
-                                    <p>已標註 892 張圖片。仍有未標註與待審核檔案。</p>
+                                    <p>請先載入或掃描工作目錄。</p>
                                 </div>
                             </div>
 
                             <div class="guide-section">
                                 <h4>下一步建議</h4>
                                 <ul class="guide-list">
-                                    <li><i class="fa-solid fa-circle-arrow-right"></i> 目前有 <b>85</b> 筆自動標註候選待人工確認。</li>
-                                    <li><i class="fa-solid fa-circle-arrow-right"></i> 建議優先至「<b>候選審核</b>」面板進行批量接受，以提升標註速率。</li>
+                                    <li><i class="fa-solid fa-circle-arrow-right"></i> 請先在第一步「資料庫」載入並掃描資料。</li>
                                 </ul>
-                            </div>
-
-                            <div class="guide-section">
-                                <h4>標註品質檢查</h4>
-                                <div class="guide-warning-item warn">
-                                    <i class="fa-solid fa-magnifying-glass"></i>
-                                    <span>檢測到 <b>4</b> 個標註邊界框 (bbox) 尺寸過小，可能導致訓練精度降低。</span>
-                                </div>
                             </div>
 
                             <div class="guide-section">
@@ -765,10 +790,10 @@
                                 <div class="progress-section" style="padding: 4px; border: none; background: none;">
                                     <div class="progress-title-row">
                                         <span>已確認比例</span>
-                                        <span id="guide-ann-progress-pct">73%</span>
+                                        <span id="guide-ann-progress-pct">0%</span>
                                     </div>
-                                    <div class="progress-bar-container">
-                                        <div class="progress-bar-fill" id="guide-ann-progress-bar" style="width: 73%;"></div>
+                                    <div class="progress-bar-container" style="background: rgba(255,255,255,0.05);">
+                                        <div class="progress-bar-fill" id="guide-ann-progress-bar" style="width: 0%;"></div>
                                     </div>
                                 </div>
                             </div>
@@ -1772,6 +1797,35 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btn-label-clear-data"><i class="fa-solid fa-trash-can"></i> 清除資料</button>
                 <button class="btn btn-primary" id="btn-label-scan-data"><i class="fa-solid fa-magnifying-glass"></i> 掃描資料</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 標註模式選擇 Modal -->
+    <div class="modal-overlay" id="annotation-mode-modal">
+        <div class="modal-content glass-panel" style="max-width: 580px; width: 90%; text-align: center; padding: 24px;">
+            <div class="modal-header" style="justify-content: center;">
+                <h2>選擇標註中心工作模式</h2>
+            </div>
+            <div class="modal-body" style="padding: 20px 0;">
+                <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 0.88rem;">請選擇要進行手動或自動標註。非選擇的項目將以半透明鎖定以防呆。</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <!-- 手動標註卡片 -->
+                    <div class="glass-panel" id="mode-select-manual" style="cursor: pointer; padding: 20px; border: 1px solid var(--border-glass); transition: var(--transition-smooth); gap: 8px; align-items: center;">
+                        <div style="font-size: 2.2rem; color: var(--neon-blue);"><i class="fa-solid fa-marker"></i></div>
+                        <h3 style="font-size: 1rem; font-weight: 700; color: #fff;">手動標註模式</h3>
+                        <p style="font-size: 0.72rem; color: var(--text-muted); text-align: center;">人工進行精細的矩形框選與類別標記。</p>
+                    </div>
+                    <!-- 自動標註卡片 -->
+                    <div class="glass-panel" id="mode-select-auto" style="cursor: pointer; padding: 20px; border: 1px solid var(--border-glass); transition: var(--transition-smooth); gap: 8px; align-items: center;">
+                        <div style="font-size: 2.2rem; color: var(--neon-green);"><i class="fa-solid fa-robot"></i></div>
+                        <h3 style="font-size: 1rem; font-weight: 700; color: #fff;">自動標註模式</h3>
+                        <p style="font-size: 0.72rem; color: var(--text-muted); text-align: center;">AI 智慧模型對指定目錄進行自動框選預測。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: center;">
+                <button class="btn btn-secondary" id="btn-close-mode-modal" style="width: 100px;">取消</button>
             </div>
         </div>
     </div>
