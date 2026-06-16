@@ -1881,7 +1881,17 @@ def run_auto_label_worker(task_id: str, payload: AutoLabelPayload):
 
         task["current_predictions"] = boxes_json
         task["processed"] += 1
-        task["success"] += 1
+
+        box_count = len(boxes_json)
+        if box_count > 0:
+            task["success"] += 1
+            task["detected_images"] += 1
+            task["total_boxes"] += box_count
+            for box in boxes_json:
+                cls_lbl = box.get("label", "unknown")
+                task["class_counts"][cls_lbl] = task["class_counts"].get(cls_lbl, 0) + 1
+        else:
+            task["empty_images"] += 1
 
         # 保留最後 20 條 log
         if len(task["log"]) > 20:
@@ -1921,6 +1931,10 @@ def start_auto_label(payload: AutoLabelPayload):
         "processed": 0,
         "success": 0,
         "failed": 0,
+        "detected_images": 0,
+        "empty_images": 0,
+        "total_boxes": 0,
+        "class_counts": {},
         "current_image": "",
         "current_image_url": "",
         "current_predictions": [],

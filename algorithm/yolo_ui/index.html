@@ -11,6 +11,28 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- 引入自訂樣式 -->
     <link rel="stylesheet" href="css/styles.css?v=20260612">
+    <style>
+        /* 確保工作區視窗支援垂直滾動，防止下方內容被截斷 */
+        .workspace-view {
+            height: calc(100vh - 64px) !important;
+            overflow-y: auto !important;
+        }
+        .workspace-layout {
+            min-height: 0 !important;
+        }
+        #annotation-view .workspace-main {
+            overflow-y: auto !important;
+            padding-bottom: 80px !important;
+        }
+        #autolabel-monitor {
+            max-height: none !important;
+            overflow: visible !important;
+        }
+        #autolabel-log {
+            max-height: 320px !important;
+            overflow-y: auto !important;
+        }
+    </style>
 </head>
 
 <body class="dark-mode">
@@ -720,9 +742,12 @@
                                     <div style="background: var(--bg-elevated); border-radius: 8px; height: 10px; overflow: hidden;">
                                         <div id="autolabel-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 8px; transition: width 0.5s ease;"></div>
                                     </div>
-                                    <div style="display: flex; gap: 16px; margin-top: 6px; font-size: 12px;">
-                                        <span style="color: var(--success);">✓ 成功 <b id="autolabel-success-count">0</b></span>
-                                        <span style="color: var(--error);">✗ 失敗 <b id="autolabel-failed-count">0</b></span>
+                                    <div style="display: flex; gap: 16px; margin-top: 6px; font-size: 12px; flex-wrap: wrap;">
+                                        <span>已處理：<b id="autolabel-processed-count">0</b></span>
+                                        <span style="color: #2ecc71;">✓ 有框圖片：<b id="autolabel-detected-count">0</b></span>
+                                        <span style="color: var(--text-secondary);">⊘ 無框圖片：<b id="autolabel-empty-count">0</b></span>
+                                        <span style="color: var(--error);">✗ 失敗：<b id="autolabel-failed-count">0</b></span>
+                                        <span style="color: var(--neon-blue);">☷ 候選框總數：<b id="autolabel-total-boxes">0</b></span>
                                     </div>
                                 </div>
 
@@ -746,6 +771,36 @@
                                         <div id="autolabel-log" style="background: var(--bg-elevated); border-radius: 8px; padding: 10px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 11px; line-height: 1.7; color: var(--text-secondary);"></div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- 自動標註結果分析報告（預設隱藏，完成後顯示） -->
+                            <div class="glass-panel" id="autolabel-result-report" style="display: none; margin-top: 16px;">
+                                <div class="section-title">
+                                    <i class="fa-solid fa-chart-pie"></i> 自動標註結果分析
+                                </div>
+
+                                <div class="result-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;">
+                                    <div class="result-card" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+                                        <span style="font-size: 0.78rem; color: var(--text-secondary); display: block;">已處理圖片</span>
+                                        <b id="result-processed" style="font-size: 1.4rem; font-weight: bold; display: block; margin-top: 4px; color: var(--text-primary);">0</b>
+                                    </div>
+                                    <div class="result-card" style="background: rgba(46, 204, 113, 0.05); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid rgba(46, 204, 113, 0.15);">
+                                        <span style="font-size: 0.78rem; color: #2ecc71; display: block;">有框圖片</span>
+                                        <b id="result-detected" style="font-size: 1.4rem; font-weight: bold; display: block; margin-top: 4px; color: #2ecc71;">0</b>
+                                    </div>
+                                    <div class="result-card" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+                                        <span style="font-size: 0.78rem; color: var(--text-secondary); display: block;">無框圖片</span>
+                                        <b id="result-empty" style="font-size: 1.4rem; font-weight: bold; display: block; margin-top: 4px; color: var(--text-secondary);">0</b>
+                                    </div>
+                                    <div class="result-card" style="background: rgba(52, 152, 219, 0.05); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid rgba(52, 152, 219, 0.15);">
+                                        <span style="font-size: 0.78rem; color: var(--neon-blue); display: block;">候選框總數</span>
+                                        <b id="result-boxes" style="font-size: 1.4rem; font-weight: bold; display: block; margin-top: 4px; color: var(--neon-blue);">0</b>
+                                    </div>
+                                </div>
+
+                                <div id="autolabel-class-distribution" style="margin-bottom: 16px; font-size: 0.85rem; color: var(--text-secondary);"></div>
+
+                                <div id="autolabel-result-advice" style="margin-top: 12px;"></div>
                             </div>
                         </div>
 
