@@ -117,8 +117,24 @@ const API = {
         return this._post("/api/labels/save", payload);
     },
 
+    // Legacy: 保留向下相容，主 UI 改用 startAutoLabel
     async runAutoLabel(payload) {
         return this._post("/api/autolabel/run", payload);
+    },
+
+    // 背景任務：啟動自動標註
+    async startAutoLabel(payload) {
+        return this._post("/api/autolabel/start", payload);
+    },
+
+    // 背景任務：查詢自動標註進度
+    async getAutoLabelStatus(taskId) {
+        return this._get(`/api/autolabel/status/${taskId}`);
+    },
+
+    // 背景任務：停止自動標註
+    async stopAutoLabel(taskId) {
+        return this._post(`/api/autolabel/stop/${taskId}`, {});
     },
 
     // 訓練管理

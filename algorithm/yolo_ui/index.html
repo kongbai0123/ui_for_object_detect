@@ -639,15 +639,14 @@
                                 <h2>智慧型自動標註</h2>
                                 <p>使用預訓練模型或先前最佳的權重對未標註資料集執行自動邊框預測，減少人工標記時間。</p>
                             </div>
+
+                            <!-- 設定面板 -->
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
                                 <div class="section-title"><i class="fa-solid fa-robot"></i> 自動標記引擎配置</div>
                                 <div class="form-group">
-                                    <label for="auto-label-path-display">自動標註目標影像目錄 (Target Directory)</label>
-                                    <div class="input-with-btn">
-                                        <input type="text" id="auto-label-path-display" placeholder="例如: C:/unlabeled_images">
-                                        <button class="btn-icon" id="btn-auto-label-choose-dir" title="選擇資料夾"><i class="fa-solid fa-folder-open"></i></button>
-                                    </div>
-                                    <small class="help-text">請指定要執行自動偵測標註的圖片資料夾。</small>
+                                    <label for="auto-label-path-display">目前資料庫影像目錄（唯讀）</label>
+                                    <input type="text" id="auto-label-path-display" readonly placeholder="請先在資料庫載入圖片資料夾">
+                                    <small class="help-text">自動標註直接使用資料庫目前載入的圖片，不需另外指定路徑。</small>
                                 </div>
                                 <div class="form-group">
                                     <label for="auto-label-model-source">選擇自動標記基底模型</label>
@@ -666,18 +665,76 @@
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label for="auto-label-confidence">自動標籤過濾信心度閥值 (Confidence)</label>
+                                    <label for="auto-label-confidence">信心度閾值 (Confidence)</label>
                                     <div style="display: flex; gap: 12px; align-items: center;">
                                         <input type="range" id="auto-label-confidence" min="0.1" max="0.9" step="0.05" value="0.75" style="flex-grow: 1;">
                                         <b id="auto-label-confidence-val">0.75</b>
                                     </div>
                                     <small class="help-text">低於此信心度的預測將自動標記為待人工審核（Candidate Review）。</small>
                                 </div>
-                                <div class="action-row" style="margin-top: 20px;">
+                                <div class="form-group">
+                                    <label for="auto-label-iou">IoU 閾值 (NMS IoU)</label>
+                                    <div style="display: flex; gap: 12px; align-items: center;">
+                                        <input type="range" id="auto-label-iou" min="0.1" max="0.9" step="0.05" value="0.5" style="flex-grow: 1;">
+                                        <b id="auto-label-iou-val">0.50</b>
+                                    </div>
+                                    <small class="help-text">非極大值抑制 IoU 門檻，數值越高保留越多重疊框。</small>
+                                </div>
+                                <div class="action-row" style="margin-top: 20px; gap: 10px;">
                                     <button class="btn btn-primary" id="btn-run-autolabel"><i class="fa-solid fa-bolt"></i> 執行自動標註任務</button>
+                                    <button class="btn btn-danger" id="btn-stop-autolabel" style="display: none;"><i class="fa-solid fa-stop"></i> 停止任務</button>
+                                </div>
+                            </div>
+
+                            <!-- Auto Label Monitor（預設隱藏，啟動後顯示） -->
+                            <div class="glass-panel" id="autolabel-monitor" style="margin-top: 16px; display: none;">
+                                <div class="section-title" style="display: flex; align-items: center; justify-content: space-between;">
+                                    <span><i class="fa-solid fa-chart-line"></i> 自動標註監控</span>
+                                    <span id="autolabel-status-badge" class="status-badge running">初始化中</span>
+                                </div>
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; color: var(--text-secondary);">
+                                    <span>模型：<b id="autolabel-model-name">—</b></span>
+                                    <span style="margin-left: 16px;">已用時間：<b id="autolabel-elapsed">0s</b></span>
+                                </div>
+
+                                <!-- 進度條 -->
+                                <div style="margin-bottom: 16px;">
+                                    <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+                                        <span>進度</span>
+                                        <span id="autolabel-progress-text">0 / 0 張</span>
+                                    </div>
+                                    <div style="background: var(--bg-elevated); border-radius: 8px; height: 10px; overflow: hidden;">
+                                        <div id="autolabel-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 8px; transition: width 0.5s ease;"></div>
+                                    </div>
+                                    <div style="display: flex; gap: 16px; margin-top: 6px; font-size: 12px;">
+                                        <span style="color: var(--success);">✓ 成功 <b id="autolabel-success-count">0</b></span>
+                                        <span style="color: var(--error);">✗ 失敗 <b id="autolabel-failed-count">0</b></span>
+                                    </div>
+                                </div>
+
+                                <!-- 主要內容：即時預覽 + Log -->
+                                <div style="display: grid; grid-template-columns: 1fr 320px; gap: 16px;">
+                                    <!-- 即時圖片預覽 -->
+                                    <div>
+                                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">
+                                            即時標註預覽 — <span id="autolabel-current-file" style="color: var(--text-primary);">等待中...</span>
+                                        </div>
+                                        <div id="autolabel-preview-container" style="position: relative; background: var(--bg-elevated); border-radius: 8px; overflow: hidden; min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                                            <img id="autolabel-preview-img" src="" alt="" style="display: none; max-width: 100%; max-height: 400px; object-fit: contain; border-radius: 6px;">
+                                            <div id="autolabel-preview-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+                                            <span id="autolabel-preview-placeholder" style="color: var(--text-secondary); font-size: 13px;"><i class="fa-solid fa-image"></i> 尚無預覽</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Log 輸出 -->
+                                    <div>
+                                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">任務日誌</div>
+                                        <div id="autolabel-log" style="background: var(--bg-elevated); border-radius: 8px; padding: 10px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 11px; line-height: 1.7; color: var(--text-secondary);"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+
 
                         <!-- Tab: Review -->
                         <div class="workspace-tab-content" data-tab-content="ann-review" style="display: none;">

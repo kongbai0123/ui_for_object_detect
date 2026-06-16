@@ -42,6 +42,18 @@ class UltralyticsTrainer(BaseTrainer):
             f.write("\n[WARNING] Training aborted by user.\n")
 
     def _run_training(self):
+        # 確保資料集 exports 已經生成且對齊
+        export_dir = Path(self.input_path) / "exports" / "yolo_dataset_v001"
+        data_yaml_path = export_dir / "data.yaml"
+        
+        if not data_yaml_path.exists():
+            self.train_status["log"].append("[SYSTEM] 檢測到尚未匯出 YOLO 資料集，開始自動切分與對齊...")
+            try:
+                self._auto_export_yolo_dataset(export_dir)
+                self.train_status["log"].append(f"[SYSTEM] 資料集自動匯出成功，路徑: {export_dir}")
+            except Exception as e:
+                self.train_status["log"].append(f"[WARNING] 自動對齊資料集失敗 (可能不影響模擬訓練): {str(e)}")
+
         try:
             # 檢查是否可以導入 ultralytics
             import ultralytics
@@ -57,36 +69,282 @@ class UltralyticsTrainer(BaseTrainer):
             self.train_status["log"].append("[SYSTEM] 本機未安裝 ultralytics 庫，進入擬真模擬 (Demo/Fallback) 模式...")
             self._run_simulated_training()
 
+    def _group_stratified_split_internal(self, images, input_dir):
+        # 載入 labels.csv 取得每張圖片的類別標籤
+        label_map = {}
+        csv_file = input_dir / "labels.csv"
+        if csv_file.exists():
+            try:
+                import csv
+                with open(csv_file, "r", encoding="utf-8", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        image_path = row.get("image_path", "")
+                        label_val = row.get("label", "")
+                        if image_path:
+                            labels_list = []
+                            label_str = label_val.strip()
+                            if label_str.startswith("[") and label_str.endswith("]"):
+                                try:
+                                    boxes = json.loads(label_str)
+                                    for b in boxes:
+                                        lbl = b.get("label", "unknown")
+                                        labels_list.append(lbl)
+                                except Exception:
+                                    if label_str:
+                                        labels_list.append(label_str)
+                            else:
+                                if label_str:
+                                    labels_list.append(label_str)
+                            label_map[image_path] = labels_list
+            except Exception as e:
+                self.train_status["log"].append(f"[WARNING] 自動切分中讀取 labels.csv 失敗: {e}")
+
+        # 定義群組規則
+        def get_group_key(rel_path: str) -> str:
+            parts = Path(rel_path).parts
+            if len(parts) > 1:
+                return parts[0]
+            else:
+                filename = parts[-1]
+                for sep in ['_', '-']:
+                    if sep in filename:
+                        prefix = filename.split(sep)[0]
+                        if prefix.strip():
+                            return prefix
+                return Path(filename).stem
+
+        # 分群
+        groups = {}
+        for img in images:
+            g_key = get_group_key(img)
+            if g_key not in groups:
+                groups[g_key] = []
+            groups[g_key].append(img)
+
+        # 統計各類別數量
+        total_class_counts = {}
+        group_stats = {}
+        for g_key, img_list in groups.items():
+            g_classes = {}
+            for img in img_list:
+                classes_in_img = label_map.get(img, ["background"])
+                if not classes_in_img:
+                    classes_in_img = ["background"]
+                for c in classes_in_img:
+                    g_classes[c] = g_classes.get(c, 0) + 1
+                    total_class_counts[c] = total_class_counts.get(c, 0) + 1
+            group_stats[g_key] = g_classes
+
+        # 排序類別與群組
+        sorted_classes = [c for c, count in sorted(total_class_counts.items(), key=lambda x: x[1])]
+
+        def get_group_rarity_score(g_key):
+            g_classes = group_stats[g_key]
+            min_rank = len(sorted_classes)
+            for c in g_classes:
+                if c in sorted_classes:
+                    rank = sorted_classes.index(c)
+                    if rank < min_rank:
+                        min_rank = rank
+            return min_rank
+
+        sorted_group_keys = sorted(
+            groups.keys(),
+            key=lambda k: (get_group_rarity_score(k), -len(groups[k]))
+        )
+
+        # 分配比例 (固定 7:2:1)
+        target_ratios = {"train": 0.7, "val": 0.2, "test": 0.1}
+        total_images_count = len(images)
+        expected_sizes = {
+            k: max(1, int(total_images_count * v)) for k, v in target_ratios.items()
+        }
+
+        splits = {"train": [], "val": [], "test": []}
+        allocated_sizes = {"train": 0, "val": 0, "test": 0}
+        allocated_class_counts = {
+            s: {c: 0 for c in total_class_counts} for s in ["train", "val", "test"]
+        }
+        expected_class_counts = {
+            s: {c: count * ratio for c, count in total_class_counts.items()}
+            for s, ratio in target_ratios.items()
+        }
+
+        for g_key in sorted_group_keys:
+            g_imgs = groups[g_key]
+            g_classes = group_stats[g_key]
+            g_size = len(g_imgs)
+
+            best_set = None
+            best_score = float('inf')
+
+            for s_name in ["train", "val", "test"]:
+                size_ratio = allocated_sizes[s_name] / expected_sizes[s_name]
+                class_score = 0.0
+                for c, count in g_classes.items():
+                    expected = expected_class_counts[s_name][c]
+                    allocated = allocated_class_counts[s_name][c]
+                    class_score += (allocated + count) / (expected + 1e-5)
+
+                score = size_ratio * 2.0 + class_score
+                if score < best_score:
+                    best_score = score
+                    best_set = s_name
+
+            if not best_set:
+                best_set = "train"
+
+            splits[best_set].extend(g_imgs)
+            allocated_sizes[best_set] += g_size
+            for c, count in g_classes.items():
+                allocated_class_counts[best_set][c] += count
+
+        # 打亂
+        import random
+        rng = random.Random(42)
+        for s_name in splits:
+            rng.shuffle(splits[s_name])
+
+        return {
+            "train": splits["train"],
+            "val": splits["val"],
+            "test": splits["test"],
+            "ratios": target_ratios,
+            "timestamp": time.time()
+        }
+
+    def _auto_export_yolo_dataset(self, export_dir: Path):
+        import shutil
+        input_dir = Path(self.input_path).resolve()
+        split_file = input_dir / "split_config.json"
+        
+        split_data = None
+        if split_file.exists():
+            try:
+                with open(split_file, "r", encoding="utf-8") as f:
+                    split_data = json.load(f)
+            except Exception as e:
+                self.train_status["log"].append(f"[WARNING] 自動對齊中讀取 split_config.json 失敗: {e}")
+                
+        if not split_data:
+            # 獲取所有圖片
+            valid_extensions = {".jpg", ".png", ".bmp", ".jpeg"}
+            images = []
+            for root, dirs, files in os.walk(input_dir):
+                parts = Path(root).parts
+                if "runs" in parts or "exports" in parts:
+                    continue
+                for f in files:
+                    if Path(f).suffix.lower() in valid_extensions:
+                        rel_path = os.path.relpath(os.path.join(root, f), input_dir).replace("\\", "/")
+                        images.append(rel_path)
+            images = sorted(images)
+            if not images:
+                raise RuntimeError("無有效影像可進行自動對齊匯出")
+            
+            # 使用內部群組切分
+            split_data = self._group_stratified_split_internal(images, input_dir)
+            with open(split_file, "w", encoding="utf-8") as f:
+                json.dump(split_data, f, indent=4, ensure_ascii=False)
+                
+        # 匯出資料夾建立
+        if export_dir.exists():
+            try:
+                shutil.rmtree(export_dir)
+            except Exception as e:
+                self.train_status["log"].append(f"[WARNING] 移除舊 exports 失敗: {e}")
+                
+        # 載入 labels.csv
+        labels_map = {}
+        csv_file = input_dir / "labels.csv"
+        if csv_file.exists():
+            try:
+                import csv
+                with open(csv_file, "r", encoding="utf-8", newline="") as f:
+                    for row in csv.DictReader(f):
+                        img_path = row.get("image_path", "")
+                        if img_path:
+                            labels_map[img_path] = row.get("label", "")
+            except Exception as e:
+                self.train_status["log"].append(f"[WARNING] 載入 labels.csv 失敗: {e}")
+                
+        class_names = list(self.classes)
+        counts = {}
+        
+        for split_name in ["train", "val", "test"]:
+            images_dir = export_dir / "images" / split_name
+            labels_dir = export_dir / "labels" / split_name
+            images_dir.mkdir(parents=True, exist_ok=True)
+            labels_dir.mkdir(parents=True, exist_ok=True)
+            counts[split_name] = 0
+            
+            for rel_path in split_data.get(split_name, []):
+                src = (input_dir / rel_path).resolve()
+                if not src.exists() or input_dir not in src.parents:
+                    continue
+                dst_img = images_dir / rel_path
+                dst_img.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst_img)
+                
+                dst_label = labels_dir / Path(rel_path).with_suffix(".txt")
+                dst_label.parent.mkdir(parents=True, exist_ok=True)
+                
+                # YOLO 標註轉換
+                lines = []
+                label_value = labels_map.get(rel_path, "")
+                if label_value:
+                    label_value = label_value.strip()
+                    if label_value.startswith("["):
+                        try:
+                            boxes = json.loads(label_value)
+                            for box in boxes:
+                                label = box.get("label", "")
+                                if label not in class_names:
+                                    class_names.append(label)
+                                class_id = class_names.index(label)
+                                x = float(box.get("x", 0.5))
+                                y = float(box.get("y", 0.5))
+                                w = float(box.get("w", 1.0))
+                                h = float(box.get("h", 1.0))
+                                lines.append(f"{class_id} {x:.6f} {y:.6f} {w:.6f} {h:.6f}")
+                        except Exception:
+                            pass
+                    else:
+                        label = label_value
+                        if label not in class_names:
+                            class_names.append(label)
+                        class_id = class_names.index(label)
+                        lines.append(f"{class_id} 0.500000 0.500000 1.000000 1.000000")
+                        
+                with open(dst_label, "w", encoding="utf-8") as f:
+                    f.write("\n".join(lines))
+                counts[split_name] += 1
+                
+        # 寫出 classes.txt 和 data.yaml
+        with open(export_dir / "classes.txt", "w", encoding="utf-8") as f:
+            f.write("\n".join(class_names))
+            
+        yaml_lines = [
+            f"path: {str(export_dir).replace(chr(92), '/')}",
+            "train: images/train",
+            "val: images/val",
+            "test: images/test",
+            f"nc: {len(class_names)}",
+            "names:"
+        ]
+        yaml_lines.extend([f"  {i}: {name}" for i, name in enumerate(class_names)])
+        with open(export_dir / "data.yaml", "w", encoding="utf-8") as f:
+            f.write("\n".join(yaml_lines) + "\n")
+
     def _run_real_yolo_training(self):
         from ultralytics import YOLO
         import torch
         import yaml
         
-        # 1. 自動建立 data.yaml
-        data_yaml_path = Path(self.output_dir) / "data.yaml"
-        # 根據 dataset 規範定義 dataset 路徑
-        # YOLOv8 格式要求：
-        # path: /path/to/dataset
-        # train: train/images
-        # val: val/images
-        
-        dataset_path = Path(self.input_path).absolute()
-        data_config = {
-            "path": str(dataset_path).replace("\\", "/"),
-            "train": "train/images",
-            "val": "val/images",
-            "nc": len(self.classes),
-            "names": self.classes
-        }
-        
-        try:
-            with open(data_yaml_path, "w", encoding="utf-8") as yf:
-                yaml.safe_dump(data_config, yf, allow_unicode=True)
-            self.train_status["log"].append(f"[SYSTEM] 已自動生成 data.yaml 於 {data_yaml_path}")
-        except Exception as e:
-            self.train_status["log"].append(f"[ERROR] 生成 data.yaml 失敗: {str(e)}")
-            self.train_status["status"] = "failed"
-            return
+        # 1. 確保 data.yaml 對齊
+        export_dir = Path(self.input_path) / "exports" / "yolo_dataset_v001"
+        data_yaml_path = export_dir / "data.yaml"
 
         # 2. 初始化 YOLO 模型
         model_name = self.config.get("weights", "yolov8n.pt")

@@ -6,33 +6,53 @@
             "models": [
                 {
                     "id": "yolov8n",
-                    "name": "YOLOv8n Detect (高速輕量偵測)",
+                    "name": "YOLOv8n Detect",
                     "weights": "yolov8n.pt",
-                    "size_mb": 6.2
+                    "size_mb": 6.2,
+                    "default_img_size": 640,
+                    "default_batch_size": 16,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.001
                 },
                 {
                     "id": "yolov8s",
-                    "name": "YOLOv8s Detect (平衡偵測)",
+                    "name": "YOLOv8s Detect",
                     "weights": "yolov8s.pt",
-                    "size_mb": 22.5
+                    "size_mb": 22.5,
+                    "default_img_size": 640,
+                    "default_batch_size": 16,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.001
                 },
                 {
                     "id": "yolo11n",
-                    "name": "YOLO11n Detect (新版高速輕量偵測)",
+                    "name": "YOLO11n Detect",
                     "weights": "yolo11n.pt",
-                    "size_mb": 5.4
+                    "size_mb": 5.4,
+                    "default_img_size": 640,
+                    "default_batch_size": 16,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.001
                 },
                 {
-                    "id": "yolo11s",
-                    "name": "YOLO11s Detect (新版平衡偵測)",
-                    "weights": "yolo11s.pt",
-                    "size_mb": 19.4
+                    "id": "rt-detr-r18",
+                    "name": "RT-DETR-r18",
+                    "weights": "rt-detr-r18.pt",
+                    "size_mb": 93.0,
+                    "default_img_size": 640,
+                    "default_batch_size": 8,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.0001
                 },
                 {
-                    "id": "yolo26n",
-                    "name": "YOLO26n Detect (極新高速輕量偵測)",
-                    "weights": "yolo26n.pt",
-                    "size_mb": 4.8
+                    "id": "fasterrcnn-r50",
+                    "name": "Faster R-CNN ResNet50-FPN",
+                    "weights": "fasterrcnn_resnet50_fpn",
+                    "size_mb": 167.0,
+                    "default_img_size": 800,
+                    "default_batch_size": 4,
+                    "default_optimizer": "SGD",
+                    "default_lr": 0.005
                 }
             ]
         },
@@ -42,39 +62,79 @@
             "models": [
                 {
                     "id": "resnet18",
-                    "name": "ResNet18 (通用、平衡結構)",
+                    "name": "ResNet18",
                     "weights": "resnet18",
-                    "size_mb": 44.7
+                    "size_mb": 44.7,
+                    "default_img_size": 224,
+                    "default_batch_size": 32,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.001
                 },
                 {
                     "id": "mobilenetv3",
-                    "name": "MobileNetV3 (輕量化、嵌入式設備)",
+                    "name": "MobileNetV3",
                     "weights": "mobilenetv3",
-                    "size_mb": 16.2
+                    "size_mb": 16.2,
+                    "default_img_size": 224,
+                    "default_batch_size": 32,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.001
                 },
                 {
-                    "id": "efficientnet",
-                    "name": "EfficientNet-B0 (高精確度分類)",
+                    "id": "efficientnet-b0",
+                    "name": "EfficientNet-B0",
                     "weights": "efficientnet_b0",
-                    "size_mb": 20.4
+                    "size_mb": 20.4,
+                    "default_img_size": 224,
+                    "default_batch_size": 16,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.0005
                 },
                 {
-                    "id": "yolov8n-cls",
-                    "name": "YOLOv8n-cls (YOLOv8 輕量分類)",
-                    "weights": "yolov8n-cls.pt",
-                    "size_mb": 5.3
+                    "id": "convnext-tiny",
+                    "name": "ConvNeXt-Tiny",
+                    "weights": "convnext_tiny",
+                    "size_mb": 114.2,
+                    "default_img_size": 224,
+                    "default_batch_size": 16,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.0005
+                }
+            ]
+        },
+        "segmentation": {
+            "name": "Semantic Segmentation (語意分割)",
+            "framework": "custom",
+            "models": [
+                {
+                    "id": "segformer-b0",
+                    "name": "SegFormer-B0",
+                    "weights": "segformer-b0.pt",
+                    "size_mb": 14.5,
+                    "default_img_size": 512,
+                    "default_batch_size": 8,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.00006
                 },
                 {
-                    "id": "yolo11n-cls",
-                    "name": "YOLO11n-cls (YOLO11 輕量分類)",
-                    "weights": "yolo11n-cls.pt",
-                    "size_mb": 4.9
+                    "id": "deeplabv3plus",
+                    "name": "DeepLabv3+",
+                    "weights": "deeplabv3plus.pt",
+                    "size_mb": 102.3,
+                    "default_img_size": 512,
+                    "default_batch_size": 4,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.0001
                 },
                 {
-                    "id": "yolo26n-cls",
-                    "name": "YOLO26n-cls (YOLO26 輕量分類)",
-                    "weights": "yolo26n-cls.pt",
-                    "size_mb": 4.5
+                    "id": "mobilenetv3-deeplab",
+                    "name": "MobileNetV3-DeepLab",
+                    "weights": "mobilenetv3-deeplab.pt",
+                    "size_mb": 42.1,
+                    "default_img_size": 512,
+                    "default_batch_size": 4,
+                    "default_optimizer": "AdamW",
+                    "default_lr": 0.0001
                 }
             ]
         }

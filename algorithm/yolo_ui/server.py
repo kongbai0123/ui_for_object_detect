@@ -2,11 +2,13 @@ import os
 import sys
 import json
 import time
+import uuid
 import shutil
 import zipfile
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -43,6 +45,9 @@ def read_index():
     return FileResponse(str(ui_path / "index.html"))
 
 # 全域狀態
+# 自動標註任務管理
+autolabel_tasks: Dict[str, dict] = {}
+autolabel_stop_flags: Dict[str, bool] = {}
 active_project = {
     "project_name": "",
     "input_path": "",
@@ -1680,7 +1685,6 @@ def read_logs():
     return {"source": "None", "lines": ["目前尚無日誌記錄。"]}
 
 class AutoLabelPayload(BaseModel):
-    target_dir: str
     model_source: str = "project_best"
     model_path: Optional[str] = None
     confidence: float = 0.75
@@ -1741,14 +1745,16 @@ def merge_and_save_labels(target_dir: Path, label_cache: dict):
         except Exception as e:
             print(f"[AUTOLABEL] 讀取現有 labels.csv 失敗: {e}")
             
-    # 合併新舊標記
-    protected_statuses = {"done", "verified", "ignore"}
+    # 合併新舊標記（精細保護策略）
     for img_path, new_data in label_cache.items():
         if img_path in existing_cache:
             old_status = existing_cache[img_path].get("status", "pending")
             old_label = existing_cache[img_path].get("label", "")
-            if old_status in protected_statuses and old_label not in ["", "[]"]:
-                # 保留已確認或已標記完成的標籤，不予覆蓋
+            # ignore：永遠不覆蓋（使用者已排除此圖）
+            if old_status == "ignore":
+                continue
+            # done / verified：有標籤時不覆蓋
+            if old_status in {"done", "verified"} and old_label not in ["", "[]"]:
                 continue
         existing_cache[img_path] = new_data
         
@@ -1767,41 +1773,72 @@ def merge_and_save_labels(target_dir: Path, label_cache: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"儲存自動標註 CSV 失敗: {str(e)}")
 
-@app.post("/api/autolabel/run")
-def run_auto_label(payload: AutoLabelPayload):
+# ---------------------------------------------------------------------------
+# 自動標註背景 Worker
+# ---------------------------------------------------------------------------
+def run_auto_label_worker(task_id: str, payload: AutoLabelPayload):
+    """在背景執行緒逐張推論，每張完成後即時更新任務狀態。"""
+    task = autolabel_tasks[task_id]
     try:
         from ultralytics import YOLO
     except ImportError:
-        raise HTTPException(
-            status_code=500,
-            detail="系統尚未安裝 ultralytics。請在本機命令提示字元 (CMD) 中執行 pip install ultralytics 以啟用真實的 YOLO 自動推理標註。"
-        )
-        
-    target_dir = Path(payload.target_dir).resolve()
+        task["status"] = "error"
+        task["error"] = "系統尚未安裝 ultralytics，請執行 pip install ultralytics"
+        task["completed_at"] = datetime.now().isoformat()
+        return
+
+    target_dir = Path(active_project.get("input_path", "")).resolve()
     if not target_dir.exists():
-        raise HTTPException(status_code=404, detail=f"目標資料夾不存在: {target_dir}")
-        
-    # 解析取得模型權重路徑 (.pt)
-    model_ref = resolve_autolabel_model(payload)
-    
-    # 支持的圖片格式
+        task["status"] = "error"
+        task["error"] = f"資料目錄不存在: {target_dir}"
+        task["completed_at"] = datetime.now().isoformat()
+        return
+
+    try:
+        model_ref = resolve_autolabel_model(payload)
+    except HTTPException as e:
+        task["status"] = "error"
+        task["error"] = e.detail
+        task["completed_at"] = datetime.now().isoformat()
+        return
+
+    task["model"] = model_ref
+    task["log"].append(f"載入模型: {model_ref}")
+
     valid_exts = {".jpg", ".jpeg", ".png", ".bmp"}
-    image_files = [
-        p for p in target_dir.rglob("*")
-        if p.suffix.lower() in valid_exts
-    ]
-    
+    image_files = sorted([p for p in target_dir.rglob("*") if p.suffix.lower() in valid_exts])
+
     if not image_files:
-        raise HTTPException(status_code=400, detail="目標資料夾中找不到任何圖片 (jpg/jpeg/png/bmp)")
-        
+        task["status"] = "error"
+        task["error"] = "資料目錄中找不到任何圖片"
+        task["completed_at"] = datetime.now().isoformat()
+        return
+
+    task["total"] = len(image_files)
+    task["log"].append(f"共找到 {len(image_files)} 張圖片，開始推論...")
+
     try:
         model = YOLO(model_ref)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"載入 YOLO 模型失敗: {str(e)}")
-        
+        task["status"] = "error"
+        task["error"] = f"載入 YOLO 模型失敗: {str(e)}"
+        task["completed_at"] = datetime.now().isoformat()
+        return
+
     label_cache = {}
-    
+
     for img_path in image_files:
+        # 檢查停止旗標
+        if autolabel_stop_flags.get(task_id, False):
+            task["status"] = "stopped"
+            task["log"].append("任務已被使用者停止")
+            task["completed_at"] = datetime.now().isoformat()
+            break
+
+        rel_path = img_path.relative_to(target_dir).as_posix()
+        task["current_image"] = rel_path
+        task["current_image_url"] = f"/images/{rel_path}"
+
         try:
             results = model.predict(
                 source=str(img_path),
@@ -1810,53 +1847,128 @@ def run_auto_label(payload: AutoLabelPayload):
                 verbose=False
             )
         except Exception as e:
-            print(f"[AUTOLABEL] 推論圖片出錯 {img_path.name}: {e}")
+            task["failed"] += 1
+            task["processed"] += 1
+            task["log"].append(f"[失敗] {img_path.name}: {str(e)[:80]}")
+            # 保留最後 20 條 log
+            if len(task["log"]) > 20:
+                task["log"] = task["log"][-20:]
             continue
-            
-        rel_path = img_path.relative_to(target_dir).as_posix()
+
         boxes_json = []
-        
         for r in results:
             if r.boxes is None:
                 continue
             img_h, img_w = r.orig_shape
             for box in r.boxes:
                 cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
+                conf_val = float(box.conf[0])
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
-                
-                # 計算相對座標 (0~1)
-                x = x1 / img_w
-                y = y1 / img_h
-                w = (x2 - x1) / img_w
-                h = (y2 - y1) / img_h
-                
                 label_name = model.names.get(cls_id, str(cls_id))
-                
                 boxes_json.append({
-                    "x": round(x, 6),
-                    "y": round(y, 6),
-                    "w": round(w, 6),
-                    "h": round(h, 6),
+                    "x": round(x1 / img_w, 6),
+                    "y": round(y1 / img_h, 6),
+                    "w": round((x2 - x1) / img_w, 6),
+                    "h": round((y2 - y1) / img_h, 6),
                     "label": label_name,
-                    "confidence": round(conf, 4)
+                    "confidence": round(conf_val, 4)
                 })
-                
-        # 將標籤快取儲存，狀態設定為 pending (待人工審核)
+
         label_cache[rel_path] = {
             "label": json.dumps(boxes_json, ensure_ascii=False),
             "status": "pending"
         }
-        
-    # 合併並儲存至 CSV
-    merge_and_save_labels(target_dir, label_cache)
-    
-    return {
-        "status": "success",
-        "message": f"自動標註推理完成，已處理 {len(image_files)} 張圖片。",
-        "model": model_ref,
-        "target_dir": str(target_dir)
+
+        task["current_predictions"] = boxes_json
+        task["processed"] += 1
+        task["success"] += 1
+
+        # 保留最後 20 條 log
+        if len(task["log"]) > 20:
+            task["log"] = task["log"][-20:]
+
+    # 寫入結果（無論完成或停止，都保存已處理部分）
+    if label_cache:
+        try:
+            merge_and_save_labels(target_dir, label_cache)
+            task["log"].append(f"已儲存 {len(label_cache)} 筆標註至 labels.csv")
+        except Exception as e:
+            task["log"].append(f"[警告] 儲存 labels.csv 失敗: {str(e)[:80]}")
+
+    if task["status"] not in {"stopped", "error"}:
+        task["status"] = "completed"
+        task["log"].append("自動標註任務完成！")
+    task["completed_at"] = datetime.now().isoformat()
+    task["current_image"] = ""
+    task["current_image_url"] = ""
+    task["current_predictions"] = []
+
+
+# ---------------------------------------------------------------------------
+# 自動標註 API
+# ---------------------------------------------------------------------------
+@app.post("/api/autolabel/start")
+def start_auto_label(payload: AutoLabelPayload):
+    """啟動背景自動標註任務，立即回傳 task_id。"""
+    if not active_project.get("input_path"):
+        raise HTTPException(status_code=400, detail="請先在資料庫載入圖片資料夾")
+
+    task_id = str(uuid.uuid4())
+    autolabel_tasks[task_id] = {
+        "task_id": task_id,
+        "status": "running",
+        "total": 0,
+        "processed": 0,
+        "success": 0,
+        "failed": 0,
+        "current_image": "",
+        "current_image_url": "",
+        "current_predictions": [],
+        "model": "",
+        "confidence": payload.confidence,
+        "iou": payload.iou,
+        "started_at": datetime.now().isoformat(),
+        "completed_at": "",
+        "error": "",
+        "log": ["自動標註任務已啟動"]
     }
+    autolabel_stop_flags[task_id] = False
+
+    thread = threading.Thread(
+        target=run_auto_label_worker,
+        args=(task_id, payload),
+        daemon=True
+    )
+    thread.start()
+
+    return {"status": "started", "task_id": task_id}
+
+
+@app.get("/api/autolabel/status/{task_id}")
+def get_auto_label_status(task_id: str):
+    """查詢自動標註任務的即時狀態。"""
+    task = autolabel_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"找不到自動標註任務: {task_id}")
+    return task
+
+
+@app.post("/api/autolabel/stop/{task_id}")
+def stop_auto_label(task_id: str):
+    """通知背景任務停止推論（graceful stop）。"""
+    if task_id not in autolabel_tasks:
+        raise HTTPException(status_code=404, detail=f"找不到自動標註任務: {task_id}")
+    autolabel_stop_flags[task_id] = True
+    autolabel_tasks[task_id]["status"] = "stopping"
+    autolabel_tasks[task_id]["log"].append("使用者要求停止任務")
+    return {"status": "stopping", "task_id": task_id}
+
+
+@app.post("/api/autolabel/run")
+def run_auto_label_legacy(payload: AutoLabelPayload):
+    """Legacy wrapper：保留向下相容，內部改為啟動背景任務。"""
+    return start_auto_label(payload)
+
 
 if __name__ == "__main__":
     import uvicorn

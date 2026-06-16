@@ -19,6 +19,12 @@ const App = {
     backendHeartbeatTimer: null,
     lastExplorerStatsError: "",
 
+    // 自動標註背景任務狀態
+    currentAutoLabelTaskId: null,
+    autoLabelTimer: null,
+    autoLabelStartTime: null,
+    autoLabelElapsedTimer: null,
+
     el(id) {
         return document.getElementById(id);
     },
@@ -673,6 +679,8 @@ const App = {
         this.value("input-path-display", this.inputPath);
         this.value("output-path-display", project.output_path || `${this.inputPath}/runs`);
         this.value("label-input-path-display", this.inputPath);
+        // 自動標註頁同步顯示目前專案的資料目錄（唯讀，來源唯一）
+        this.value("auto-label-path-display", this.inputPath);
         
         const canvas = this.el("label-canvas");
         const canvasContainer = this.el("canvas-container-div");
@@ -3681,7 +3689,7 @@ names:
                 </div>
             `;
         }
-        
+
         // 標註模式重設
         localStorage.removeItem("yolo-ann-mode");
         this.annotationMode = null;
@@ -3839,14 +3847,6 @@ names:
             this.setAnnotationMode("auto");
         });
 
-        // 自動標註目標影像目錄選擇按鈕 (使用 chooseFolderOnce 防重複彈出 dialog)
-        this.on("btn-auto-label-choose-dir", "click", async () => {
-            const res = await this.chooseFolderOnce();
-            if (res && res.status === "success" && res.path) {
-                this.value("auto-label-path-display", res.path);
-                showToast(`已選擇自動標註目標目錄: ${res.path}`, "success");
-            }
-        });
 
         // 智慧自動標註：基底模型來源 change 事件監聽
         this.on("auto-label-model-source", "change", (e) => {
@@ -3873,78 +3873,278 @@ names:
         this.on("auto-label-confidence", "input", (e) => {
             const valEl = document.getElementById("auto-label-confidence-val");
             if (valEl) {
-                valEl.textContent = e.target.value;
+                valEl.textContent = parseFloat(e.target.value).toFixed(2);
             }
         });
 
-        // 執行自動標註任務按鈕 (調用真實 YOLO 推理 API)
-        this.on("btn-run-autolabel", "click", async () => {
-            const dirInput = document.getElementById("auto-label-path-display");
-            let dirPath = dirInput ? dirInput.value.trim() : "";
-
-            // 若未選擇目標目錄，自動使用當前專案的 inputPath 作為預設
-            if (!dirPath) {
-                if (this.inputPath) {
-                    dirPath = this.inputPath;
-                    if (dirInput) dirInput.value = dirPath;
-                    showToast(`未指定目標目錄，自動使用專案資料目錄: ${dirPath}`, "info");
-                } else {
-                    showToast("請先選擇自動標註目標目錄！", "warn");
-                    return;
-                }
+        // 智慧自動標註：NMS IoU slider 拖曳值即時更新
+        this.on("auto-label-iou", "input", (e) => {
+            const valEl = document.getElementById("auto-label-iou-val");
+            if (valEl) {
+                valEl.textContent = parseFloat(e.target.value).toFixed(2);
             }
+        });
 
+        // 執行自動標註任務按鈕 (啟動背景 YOLO 推理)
+        this.on("btn-run-autolabel", "click", async () => {
             if (!this.projectLoaded) {
                 showToast("請先在資料庫管理載入或建立專案！", "warn");
                 return;
             }
 
-            // 嚴格版本限制：自動標註目錄必須等於目前專案資料目錄，避免 labels.csv 寫入不同資料夾導致資料錯位
-            if (dirPath !== this.inputPath) {
-                showToast("自動標註目錄必須等於目前專案資料目錄，請先切換專案或重新選擇。", "warn");
+            const dirPath = this.inputPath;
+            if (!dirPath) {
+                showToast("專案資料目錄不存在，請先在資料庫設定 Input 資料夾路徑。", "warn");
                 return;
             }
 
             const modelSource = document.getElementById("auto-label-model-source")?.value || "project_best";
             const modelPath = document.getElementById("auto-label-model-path")?.value.trim() || "";
             const confidence = parseFloat(document.getElementById("auto-label-confidence")?.value || "0.75");
+            const iou = parseFloat(document.getElementById("auto-label-iou")?.value || "0.50");
 
             if (modelSource === "custom_path" && !modelPath) {
                 showToast("請選擇自訂模型權重路徑！", "warn");
                 return;
             }
 
-            const btn = document.getElementById("btn-run-autolabel");
-            if (!btn) return;
-            
-            const originalText = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 正在執行自動標註...';
+            const runBtn = document.getElementById("btn-run-autolabel");
+            const stopBtn = document.getElementById("btn-stop-autolabel");
+            const monitorPanel = document.getElementById("autolabel-monitor");
 
-            showToast("正在啟動背景 YOLO 自動標註推理...", "info");
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 正在啟動...';
+            }
 
             try {
                 const payload = {
-                    target_dir: dirPath,
                     model_source: modelSource,
                     model_path: modelPath,
                     confidence: confidence,
-                    iou: 0.5
+                    iou: iou
                 };
-                const res = await API.runAutoLabel(payload);
-                showToast(res.message || "自動標註完成！", "success");
-                await this.scanDataset();
-                showToast("已成功載入候選樣本，請點擊「資料分析」前往審核修正標記框位置。", "success");
+
+                const res = await API.startAutoLabel(payload);
+                if (res && res.status === "started" && res.task_id) {
+                    this.currentAutoLabelTaskId = res.task_id;
+                    this.autoLabelStartTime = Date.now();
+
+                    // 切換按鈕狀態
+                    if (runBtn) runBtn.style.display = "none";
+                    if (stopBtn) {
+                        stopBtn.style.display = "inline-flex";
+                        stopBtn.disabled = false;
+                        stopBtn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止任務';
+                    }
+
+                    // 重置並顯示監控面版
+                    if (monitorPanel) monitorPanel.style.display = "block";
+                    
+                    const progressText = document.getElementById("autolabel-progress-text");
+                    if (progressText) progressText.textContent = "0 / 0 張";
+                    
+                    const progressBar = document.getElementById("autolabel-progress-bar");
+                    if (progressBar) progressBar.style.width = "0%";
+                    
+                    const logEl = document.getElementById("autolabel-log");
+                    if (logEl) logEl.innerHTML = "<div>正在連接背景標註服務...</div>";
+
+                    const elapsedEl = document.getElementById("autolabel-elapsed");
+                    if (elapsedEl) elapsedEl.textContent = "0s";
+
+                    showToast("背景自動標註任務已成功啟動！", "success");
+                    this.startAutoLabelPolling(res.task_id);
+                } else {
+                    throw new Error("伺服器未回傳有效任務識別碼");
+                }
             } catch (err) {
-                showToast(`自動標註執行失敗: ${err.message}`, "error");
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalText;
+                showToast(`啟動自動標註失敗: ${err.message}`, "error");
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = '<i class="fa-solid fa-bolt"></i> 執行自動標註任務';
+                }
+            }
+        });
+
+        // 停止自動標註按鈕
+        this.on("btn-stop-autolabel", "click", async () => {
+            if (!this.currentAutoLabelTaskId) return;
+            
+            const stopBtn = document.getElementById("btn-stop-autolabel");
+            if (stopBtn) {
+                stopBtn.disabled = true;
+                stopBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 正在停止...';
+            }
+
+            try {
+                await API.stopAutoLabel(this.currentAutoLabelTaskId);
+                showToast("已發送停止指令，正在寫入已完成的標註，請稍候...", "info");
+            } catch (err) {
+                showToast(`停止自動標註失敗: ${err.message}`, "error");
+                if (stopBtn) {
+                    stopBtn.disabled = false;
+                    stopBtn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止任務';
+                }
             }
         });
 
         // 初始化渲染
         this.updateAnnotationModeUi();
+    },
+
+    // ---------------------------------------------------------------------------
+    // 自動標註背景任務：輪詢、渲染、bbox 繪制
+    // ---------------------------------------------------------------------------
+
+    startAutoLabelPolling(taskId) {
+        // 清除舊 timer
+        if (this.autoLabelTimer) clearInterval(this.autoLabelTimer);
+        if (this.autoLabelElapsedTimer) clearInterval(this.autoLabelElapsedTimer);
+
+        // 展示已用時間計數
+        this.autoLabelElapsedTimer = setInterval(() => {
+            const el = document.getElementById("autolabel-elapsed");
+            if (el && this.autoLabelStartTime) {
+                const sec = Math.floor((Date.now() - this.autoLabelStartTime) / 1000);
+                el.textContent = sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${sec % 60}s`;
+            }
+        }, 1000);
+
+        // 輪詢任務狀態
+        this.autoLabelTimer = setInterval(async () => {
+            try {
+                const status = await API.getAutoLabelStatus(taskId);
+                this.renderAutoLabelStatus(status);
+
+                if (["completed", "error", "stopped"].includes(status.status)) {
+                    clearInterval(this.autoLabelTimer);
+                    clearInterval(this.autoLabelElapsedTimer);
+                    this.autoLabelTimer = null;
+                    this.autoLabelElapsedTimer = null;
+
+                    // 恢復按鈕
+                    const runBtn = document.getElementById("btn-run-autolabel");
+                    const stopBtn = document.getElementById("btn-stop-autolabel");
+                    if (runBtn) { runBtn.style.display = "inline-flex"; runBtn.disabled = false; runBtn.innerHTML = '<i class="fa-solid fa-bolt"></i> 執行自動標註任務'; }
+                    if (stopBtn) { stopBtn.style.display = "none"; stopBtn.disabled = false; stopBtn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止任務'; }
+
+                    if (status.status === "completed") {
+                        showToast(`自動標註完成！共處理 ${status.processed} 張圖片。`, "success");
+                        await this.scanDataset();
+                        showToast("候選樣本已載入，請前往「候選審核」審核標註。", "success");
+                    } else if (status.status === "stopped") {
+                        showToast(`任務已停止，已完成 ${status.processed} / ${status.total} 張圖片。`, "info");
+                        await this.scanDataset();
+                    } else if (status.status === "error") {
+                        showToast(`自動標註發生錯誤: ${status.error}`, "error");
+                    }
+                }
+            } catch (err) {
+                console.error("[AUTOLABEL] 輪詢失敗:", err);
+            }
+        }, 1000);
+    },
+
+    renderAutoLabelStatus(status) {
+        const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        const setHtml = (id, val) => { const el = document.getElementById(id); if (el) el.innerHTML = val; };
+
+        // 狀態 Badge
+        const badge = document.getElementById("autolabel-status-badge");
+        if (badge) {
+            const MAP = { running: ["running", "推理中"], stopping: ["warn", "停止中"], completed: ["success", "完成"], stopped: ["warn", "已停止"], error: ["error", "錯誤"] };
+            const [cls, label] = MAP[status.status] || ["info", status.status];
+            badge.className = `status-badge ${cls}`;
+            badge.textContent = label;
+        }
+
+        // 模型名稱
+        const modelName = status.model ? status.model.split(/[\/\\]/).pop() : "載入中...";
+        setText("autolabel-model-name", modelName);
+
+        // 進度
+        const total = status.total || 0;
+        const processed = status.processed || 0;
+        const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+        const bar = document.getElementById("autolabel-progress-bar");
+        if (bar) bar.style.width = `${pct}%`;
+        setText("autolabel-progress-text", `${processed} / ${total} 張`);
+        setText("autolabel-success-count", status.success || 0);
+        setText("autolabel-failed-count", status.failed || 0);
+
+        // 目前檔名
+        const fileName = status.current_image ? status.current_image.split("/").pop() : (
+            status.status === "completed" ? "已完成" : "等待中..."
+        );
+        setText("autolabel-current-file", fileName);
+
+        // 即時圖片預覽
+        const img = document.getElementById("autolabel-preview-img");
+        const placeholder = document.getElementById("autolabel-preview-placeholder");
+        if (img && status.current_image_url) {
+            img.src = status.current_image_url + "?t=" + Date.now();
+            img.style.display = "block";
+            if (placeholder) placeholder.style.display = "none";
+        } else if (img && !status.current_image_url) {
+            img.style.display = "none";
+            if (placeholder) placeholder.style.display = "block";
+        }
+
+        // Bbox 繪製
+        const overlay = document.getElementById("autolabel-preview-overlay");
+        if (overlay) {
+            overlay.innerHTML = "";
+            if (status.current_predictions && status.current_predictions.length > 0) {
+                this.renderAutoLabelBboxes(status.current_predictions, overlay);
+            }
+        }
+
+        // Log
+        const logEl = document.getElementById("autolabel-log");
+        if (logEl && status.log) {
+            const lines = status.log.slice(-20);
+            logEl.innerHTML = lines.map(l => `<div>${l}</div>`).join("");
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    },
+
+    renderAutoLabelBboxes(predictions, containerEl) {
+        // 使用百分比絕對定位畫出 bbox
+        const COLORS = ["#f97316", "#3b82f6", "#10b981", "#ef4444", "#a855f7", "#eab308", "#06b6d4"];
+        predictions.forEach((pred, i) => {
+            const color = COLORS[i % COLORS.length];
+            const box = document.createElement("div");
+            box.style.cssText = [
+                "position: absolute",
+                `left: ${pred.x * 100}%`,
+                `top: ${pred.y * 100}%`,
+                `width: ${pred.w * 100}%`,
+                `height: ${pred.h * 100}%`,
+                `border: 2px solid ${color}`,
+                "border-radius: 2px",
+                "box-sizing: border-box",
+                "pointer-events: none"
+            ].join(";");
+
+            // label chip
+            const chip = document.createElement("span");
+            chip.style.cssText = [
+                "position: absolute",
+                "top: -18px",
+                "left: 0",
+                `background: ${color}`,
+                "color: #fff",
+                "font-size: 10px",
+                "padding: 1px 4px",
+                "border-radius: 3px",
+                "white-space: nowrap",
+                "line-height: 16px"
+            ].join(";");
+            chip.textContent = `${pred.label} ${(pred.confidence * 100).toFixed(0)}%`;
+            box.appendChild(chip);
+            containerEl.appendChild(box);
+        });
     },
 
     setAnnotationMode(mode) {
