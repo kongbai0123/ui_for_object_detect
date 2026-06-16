@@ -221,6 +221,19 @@ const API = {
             console.error(`POST ${endpoint} 出錯:`, error);
             throw error;
         }
+    },
+
+    // 標籤版本管理
+    async createLabelVersion(versionName) {
+        return this._post("/api/labels/version/create", { version_name: versionName });
+    },
+
+    async listLabelVersions() {
+        return this._get("/api/labels/version/list");
+    },
+
+    async restoreLabelVersion(versionId) {
+        return this._post("/api/labels/version/restore", { version: versionId });
     }
 };
 // UI Toast 提示訊息工具

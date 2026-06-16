@@ -18,6 +18,11 @@ const App = {
     trainTimer: null,
     backendHeartbeatTimer: null,
     lastExplorerStatsError: "",
+    
+    // 候選審核佇列
+    reviewQueue: [],
+    currentReviewIndex: -1,
+    reviewMode: false,
 
     // 自動標註背景任務狀態
     currentAutoLabelTaskId: null,
@@ -311,6 +316,80 @@ const App = {
                 this.switchWorkspaceTab("training-workflow-view", "train-config");
             });
         }
+
+        // 標籤版本備份建立
+        const createVersionBtn = document.getElementById("btn-create-label-version");
+        if (createVersionBtn) {
+            createVersionBtn.addEventListener("click", async () => {
+                const inputEl = document.getElementById("input-new-version-name");
+                if (!inputEl) return;
+                const versionName = inputEl.value.trim();
+                if (!versionName) {
+                    showToast("請輸入備份版本名稱或備註", "warn");
+                    return;
+                }
+
+                try {
+                    const res = await API.createLabelVersion(versionName);
+                    showToast(res.message || "版本備份成功", "success");
+                    inputEl.value = "";
+                    this.renderLabelVersions();
+                } catch (err) {
+                    showToast(`建立備份失敗: ${err.message}`, "error");
+                }
+            });
+        }
+
+        // 重新執行品質檢測
+        const runQaBtn = document.getElementById("btn-run-qa-scan");
+        if (runQaBtn) {
+            runQaBtn.addEventListener("click", async () => {
+                showToast("開始標註品質檢查...", "info");
+                await this.scanDataset();
+                this.runAnnotationQualityCheck();
+                showToast("標註品質檢查完成", "success");
+            });
+        }
+
+        // 開始逐張審核
+        const startReviewBtn = document.getElementById("btn-start-review-editor");
+        if (startReviewBtn) {
+            startReviewBtn.addEventListener("click", () => {
+                this.enterCandidateReviewMode();
+            });
+        }
+
+        // 接受此標註
+        const reviewAcceptBtn = document.getElementById("btn-review-accept");
+        if (reviewAcceptBtn) {
+            reviewAcceptBtn.addEventListener("click", () => {
+                this.acceptCurrentReviewLabel();
+            });
+        }
+
+        // 儲存並下一張
+        const reviewSaveNextBtn = document.getElementById("btn-review-save-next");
+        if (reviewSaveNextBtn) {
+            reviewSaveNextBtn.addEventListener("click", () => {
+                this.saveReviewAndNext();
+            });
+        }
+
+        // 忽略此圖
+        const reviewIgnoreBtn = document.getElementById("btn-review-ignore");
+        if (reviewIgnoreBtn) {
+            reviewIgnoreBtn.addEventListener("click", () => {
+                this.ignoreCurrentReviewImage();
+            });
+        }
+
+        // 離開審核
+        const reviewExitBtn = document.getElementById("btn-review-exit");
+        if (reviewExitBtn) {
+            reviewExitBtn.addEventListener("click", () => {
+                this.exitReviewMode();
+            });
+        }
     },
 
     enableTabs() {
@@ -405,6 +484,16 @@ const App = {
             } else {
                 this.resetDbHealthUi();
             }
+        } else if (tabName === "ann-review") {
+            this.renderReviewGallery();
+        } else if (tabName === "ann-verified") {
+            this.renderVerifiedGallery();
+        } else if (tabName === "ann-unlabeled") {
+            this.renderUnlabeledGallery();
+        } else if (tabName === "ann-quality") {
+            this.runAnnotationQualityCheck();
+        } else if (tabName === "ann-version") {
+            this.renderLabelVersions();
         }
         
         // 4. 更新 Smart Guide
@@ -960,6 +1049,20 @@ const App = {
             setElText("card-ann-verified", summary.done);
             setElText("card-ann-pending", summary.ignored); // 這裡用已忽略數來做個模擬
 
+            // 計算並更新待審核佇列狀態
+            const pendingReviewItems = this.getPendingReviewItems();
+            let totalReviewBoxes = 0;
+            pendingReviewItems.forEach(img => {
+                try {
+                    const boxes = JSON.parse(img.label);
+                    if (Array.isArray(boxes)) {
+                        totalReviewBoxes += boxes.length;
+                    }
+                } catch(e) {}
+            });
+            setElText("review-pending-count", pendingReviewItems.length);
+            setElText("review-box-count", totalReviewBoxes);
+
             // 計算健康度得分
             let healthScore = 100;
             if (summary.total_images > 0) {
@@ -1065,6 +1168,20 @@ const App = {
             this.updateSmartGuide("annotation-view", "ann-manual");
             this.updateSmartGuide("distribution-view", "dist-split");
             this.updateSmartGuide("training-workflow-view", "train-config");
+
+            // 若目前正處於這些 Tab，自動同步更新內容
+            const activeAnnTab = document.querySelector("#annotation-view .sidebar-menu li.active")?.getAttribute("data-tab");
+            if (activeAnnTab === "ann-review") {
+                this.renderReviewGallery();
+            } else if (activeAnnTab === "ann-verified") {
+                this.renderVerifiedGallery();
+            } else if (activeAnnTab === "ann-unlabeled") {
+                this.renderUnlabeledGallery();
+            } else if (activeAnnTab === "ann-quality") {
+                this.runAnnotationQualityCheck();
+            } else if (activeAnnTab === "ann-version") {
+                this.renderLabelVersions();
+            }
 
             showToast("資料庫掃描完成", "info");
         } catch (err) {
@@ -4032,7 +4149,7 @@ names:
                     if (status.status === "completed") {
                         showToast(`自動標註完成！共處理 ${status.processed} 張圖片。`, "success");
                         await this.scanDataset();
-                        showToast("候選樣本已載入，請前往「候選審核」審核標註。", "success");
+                        this.enterCandidateReviewMode();
                     } else if (status.status === "stopped") {
                         showToast(`任務已停止，已完成 ${status.processed} / ${status.total} 張圖片。`, "info");
                         await this.scanDataset();
@@ -4217,6 +4334,499 @@ names:
                 }
             });
         }
+    },
+
+    // ==========================================================================
+    // 標註生命週期 (Review / Verified / Unlabeled / QA / Versions) 實作
+    // ==========================================================================
+    renderReviewGallery() {
+        const container = document.getElementById("review-gallery-container");
+        if (!container) return;
+
+        // review 渲染 status === "pending" 且有 label 的圖片
+        const items = (this.images || []).filter(img => {
+            return img.status === "pending" && img.label && img.label !== "[]" && img.label !== "";
+        });
+
+        this.renderMiniGallery(container, items, "無待審核的候選標籤。");
+    },
+
+    renderVerifiedGallery() {
+        const container = document.getElementById("verified-gallery-container");
+        if (!container) return;
+
+        // verified 渲染 done 或 verified 圖片
+        const items = (this.images || []).filter(img => {
+            return ["done", "verified"].includes(img.status);
+        });
+
+        this.renderMiniGallery(container, items, "無已確認標籤。");
+    },
+
+    renderUnlabeledGallery() {
+        const container = document.getElementById("unlabeled-gallery-container");
+        if (!container) return;
+
+        // unlabeled 渲染未標註圖片：label 為空或 "[]"，且狀態不是 ignore
+        const items = (this.images || []).filter(img => {
+            const hasNoLabel = !img.label || img.label === "[]" || img.label === "";
+            return hasNoLabel && img.status !== "ignore";
+        });
+
+        this.renderMiniGallery(container, items, "無未標註影像。");
+    },
+
+    renderMiniGallery(container, items, emptyText) {
+        container.innerHTML = "";
+
+        if (items.length === 0) {
+            container.innerHTML = `<div class="empty-hint" style="grid-column: 1 / -1; padding: 20px; text-align: center; color: var(--text-secondary);">${emptyText}</div>`;
+            return;
+        }
+
+        items.forEach(img => {
+            const indexInMaster = this.masterImageIndexLookup(img.path);
+
+            const card = document.createElement("div");
+            card.className = "gallery-card mini";
+            card.style.cursor = "pointer";
+
+            let labelText = "未標註";
+            if (img.label) {
+                try {
+                    if (img.label.startsWith("[")) {
+                        const boxes = JSON.parse(img.label);
+                        if (boxes.length > 0) {
+                            labelText = `${boxes[0].label} (${boxes.length})`;
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            const imgUrl = `${API_BASE}${img.thumb_url || img.url}`;
+
+            card.innerHTML = `
+                <div class="gallery-card-img-wrapper" style="position: relative; aspect-ratio: 4/3; background: var(--bg-dark); border-radius: 6px; overflow: hidden;">
+                    <img src="${imgUrl}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;">
+                    <span class="status-badge ${img.status}" style="position: absolute; top: 6px; right: 6px; font-size: 10px; padding: 2px 6px; border-radius: 4px;">${img.status === 'done' ? '已標註' : (img.status === 'pending' ? '待確認' : '已忽略')}</span>
+                </div>
+                <div class="gallery-card-info" style="padding: 8px 4px;">
+                    <span style="font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary);">${img.path.split('/').pop().split('\\').pop()}</span>
+                    <strong style="font-size: 12px; display: block; margin-top: 2px; color: var(--neon-blue);">${labelText}</strong>
+                </div>
+            `;
+
+            card.addEventListener("click", () => {
+                if (indexInMaster !== -1) {
+                    this.loadImgToLabelView(indexInMaster);
+                    this.switchView("label-view");
+                    showToast(`已載入: ${img.path.split('/').pop()}`, "info");
+                }
+            });
+
+            container.appendChild(card);
+        });
+    },
+
+    runAnnotationQualityCheck() {
+        if (!this.projectLoaded) return;
+
+        const issues = {
+            tinyBoxes: [],
+            outOfBounds: [],
+            invalidClass: [],
+            emptyDone: [],
+            duplicateOverlap: []
+        };
+
+        this.images.forEach(img => {
+            const filename = img.path.split('/').pop().split('\\').pop();
+
+            if (!img.label || img.label === "[]" || img.label === "") {
+                if (["done", "verified"].includes(img.status)) {
+                    issues.emptyDone.push({ path: img.path, filename });
+                }
+                return;
+            }
+
+            let boxes = [];
+            try {
+                if (img.label.startsWith("[")) {
+                    boxes = JSON.parse(img.label);
+                } else {
+                    return;
+                }
+            } catch (e) {
+                issues.invalidClass.push({ path: img.path, filename, label: "格式損毀" });
+                return;
+            }
+
+            let tinyCount = 0;
+            let oobCount = 0;
+            let invalidClsCount = 0;
+
+            boxes.forEach(box => {
+                if (box.w < 0.01 || box.h < 0.01) {
+                    tinyCount++;
+                }
+
+                if (box.x < 0 || box.y < 0 || box.x + box.w > 1.01 || box.y + box.h > 1.01) {
+                    oobCount++;
+                }
+
+                if (!this.classes.includes(box.label)) {
+                    invalidClsCount++;
+                }
+            });
+
+            if (tinyCount > 0) issues.tinyBoxes.push({ path: img.path, filename, count: tinyCount });
+            if (oobCount > 0) issues.outOfBounds.push({ path: img.path, filename, count: oobCount });
+            if (invalidClsCount > 0) issues.invalidClass.push({ path: img.path, filename, label: `無效類別 (${invalidClsCount} 個)` });
+
+            let overlapCount = 0;
+            for (let i = 0; i < boxes.length; i++) {
+                for (let j = i + 1; j < boxes.length; j++) {
+                    const iou = this.calculateBboxIoU(boxes[i], boxes[j]);
+                    if (iou > 0.95) {
+                        overlapCount++;
+                    }
+                }
+            }
+            if (overlapCount > 0) {
+                issues.duplicateOverlap.push({ path: img.path, filename, count: overlapCount });
+            }
+        });
+
+        this.renderAnnotationQualityReport(issues);
+    },
+
+    calculateBboxIoU(box1, box2) {
+        const x1 = Math.max(box1.x, box2.x);
+        const y1 = Math.max(box1.y, box2.y);
+        const x2 = Math.min(box1.x + box1.w, box2.x + box2.w);
+        const y2 = Math.min(box1.y + box1.h, box2.y + box2.h);
+
+        const w = Math.max(0, x2 - x1);
+        const h = Math.max(0, y2 - y1);
+        const inter = w * h;
+
+        const union = (box1.w * box1.h) + (box2.w * box2.h) - inter;
+        if (union <= 0) return 0;
+        return inter / union;
+    },
+
+    renderAnnotationQualityReport(issues) {
+        const container = document.getElementById("qa-warnings-container");
+        if (!container) return;
+
+        container.innerHTML = "";
+
+        const totalIssues = issues.tinyBoxes.length + issues.outOfBounds.length + issues.invalidClass.length + issues.emptyDone.length + issues.duplicateOverlap.length;
+
+        if (totalIssues === 0) {
+            container.innerHTML = `
+                <div class="guide-warning-item info" style="display: flex; align-items: flex-start; gap: 10px; background: rgba(46, 204, 113, 0.1); border: 1px solid rgba(46, 204, 113, 0.2); padding: 12px; border-radius: 8px; color: var(--text-primary);">
+                    <i class="fa-solid fa-circle-check" style="color: #2ecc71; margin-top: 3px; font-size: 15px;"></i>
+                    <div>
+                        <strong style="display: block; font-size: 13px; color: #2ecc71;">檢查通過</strong>
+                        <span style="font-size: 12px; color: var(--text-secondary);">未發現標註框過小、越界、重複重疊或無效類別等標記異常。</span>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        const addWarning = (type, title, desc, items) => {
+            const listHtml = items.map(item => {
+                const indexInMaster = this.masterImageIndexLookup(item.path);
+                return `<span class="qa-item-link" style="color: var(--neon-blue); text-decoration: underline; cursor: pointer; margin-right: 8px; font-size: 11px;" data-index="${indexInMaster}">${item.filename}</span>`;
+            }).join(" ");
+
+            const itemDiv = document.createElement("div");
+            itemDiv.className = `guide-warning-item ${type === 'error' ? 'danger' : 'warn'}`;
+            const itemBg = type === 'error' ? 'rgba(231, 76, 60, 0.08)' : 'rgba(241, 196, 15, 0.08)';
+            const borderCol = type === 'error' ? 'rgba(231, 76, 60, 0.2)' : 'rgba(241, 196, 15, 0.2)';
+            const iconCol = type === 'error' ? '#e74c3c' : '#f1c40f';
+            const icon = type === 'error' ? 'fa-circle-xmark' : 'fa-triangle-exclamation';
+
+            itemDiv.setAttribute("style", `display: flex; align-items: flex-start; gap: 10px; background: ${itemBg}; border: 1px solid ${borderCol}; padding: 12px; border-radius: 8px; color: var(--text-primary); margin-bottom: 8px;`);
+            itemDiv.innerHTML = `
+                <i class="fa-solid ${icon}" style="color: ${iconCol}; margin-top: 3px; font-size: 15px;"></i>
+                <div style="flex: 1;">
+                    <strong style="display: block; font-size: 13px; color: ${iconCol};">${title}</strong>
+                    <span style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 6px;">${desc}</span>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">${listHtml}</div>
+                </div>
+            `;
+
+            itemDiv.querySelectorAll(".qa-item-link").forEach(link => {
+                link.addEventListener("click", (e) => {
+                    const idx = parseInt(e.target.getAttribute("data-index"));
+                    if (idx !== -1 && !isNaN(idx)) {
+                        this.loadImgToLabelView(idx);
+                        this.switchView("label-view");
+                    }
+                });
+            });
+
+            container.appendChild(itemDiv);
+        };
+
+        if (issues.outOfBounds.length > 0) {
+            addWarning("error", "標註框越界 (Out of Bounds)", `發現 ${issues.outOfBounds.length} 張影像的標註框超出邊界，這可能在部分 YOLO 版本中引起致命錯誤或異常裁剪。`, issues.outOfBounds);
+        }
+        if (issues.invalidClass.length > 0) {
+            addWarning("error", "無效或損毀的標籤類別", `發現 ${issues.invalidClass.length} 張影像包含未定義於類別清單的標籤，或 JSON 格式損毀。`, issues.invalidClass);
+        }
+        if (issues.tinyBoxes.length > 0) {
+            addWarning("warn", "邊界框過小 (Too Small)", `發現 ${issues.tinyBoxes.length} 張影像的標記框極小 (寬度或高度小於 1%)，可能會被 YOLO 演算法忽略。`, issues.tinyBoxes);
+        }
+        if (issues.duplicateOverlap.length > 0) {
+            addWarning("warn", "高重疊重複標註 (High Overlap)", `偵測到 ${issues.duplicateOverlap.length} 張影像中存在重疊率極高 (IoU > 0.95) 的重複框，可能為誤標。`, issues.duplicateOverlap);
+        }
+        if (issues.emptyDone.length > 0) {
+            addWarning("warn", "已確認標記但無標框", `發現 ${issues.emptyDone.length} 張標記狀態為已完成，但沒有標註任何邊界框，請確認是否為背景圖片。`, issues.emptyDone);
+        }
+    },
+
+    async renderLabelVersions() {
+        if (!this.projectLoaded) return;
+
+        try {
+            const res = await API.listLabelVersions();
+            const tbody = document.getElementById("label-versions-tbody");
+            if (!tbody) return;
+
+            tbody.innerHTML = "";
+
+            if (!res.versions || res.versions.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 20px;">尚無任何標籤版本備份記錄</td></tr>`;
+                return;
+            }
+
+            res.versions.forEach((v, index) => {
+                const tr = document.createElement("tr");
+                const isCurrent = index === 0;
+                
+                let actionBtn = "";
+                if (isCurrent) {
+                    actionBtn = `<span class="val badge done" style="background: rgba(46, 204, 113, 0.2); color: #2ecc71; padding: 4px 8px; border-radius: 4px;">目前最新</span>`;
+                } else {
+                    actionBtn = `<button class="btn btn-secondary btn-sm btn-restore-version" data-version="${v.version}" style="padding: 4px 8px; font-size: 11px;"><i class="fa-solid fa-undo"></i> 還原此版</button>`;
+                }
+
+                tr.innerHTML = `
+                    <td style="font-weight: bold; color: var(--text-primary);">${v.name}</td>
+                    <td>${v.total_boxes.toLocaleString()} 個</td>
+                    <td>${v.verified_images.toLocaleString()} 張</td>
+                    <td style="color: var(--text-secondary);">${v.timestamp}</td>
+                    <td>${actionBtn}</td>
+                `;
+
+                const restoreBtn = tr.querySelector(".btn-restore-version");
+                if (restoreBtn) {
+                    restoreBtn.addEventListener("click", async () => {
+                        if (confirm(`您確定要將目前的標記還原到「${v.name}」版本嗎？\n這會覆寫當前的 labels.csv 標記！`)) {
+                            try {
+                                const restoreRes = await API.restoreLabelVersion(v.version);
+                                showToast(restoreRes.message || "標記還原成功", "success");
+                                await this.scanDataset();
+                                this.renderLabelVersions();
+                            } catch (err) {
+                                showToast(`還原失敗: ${err.message}`, "error");
+                            }
+                        }
+                    });
+                }
+
+                tbody.appendChild(tr);
+            });
+        } catch (err) {
+            showToast(`載入版本列表失敗: ${err.message}`, "error");
+        }
+    },
+
+    hasValidBoxes(label) {
+        if (!label || label === "[]" || label.trim() === "") return false;
+        try {
+            const boxes = JSON.parse(label);
+            return Array.isArray(boxes) && boxes.length > 0;
+        } catch {
+            return false;
+        }
+    },
+
+    getPendingReviewItems() {
+        return (this.images || []).filter(img => {
+            return img.status === "pending" && this.hasValidBoxes(img.label);
+        });
+    },
+
+    enterCandidateReviewMode() {
+        this.reviewQueue = this.getPendingReviewItems();
+
+        if (this.reviewQueue.length === 0) {
+            showToast("自動標註完成，但沒有需要審核的候選框。", "info");
+            this.switchWorkspaceTab("annotation-view", "ann-review");
+            return;
+        }
+
+        this.reviewMode = true;
+        this.currentReviewIndex = 0;
+
+        const first = this.reviewQueue[0];
+        const masterIndex = this.masterImageIndexLookup(first.path);
+
+        if (masterIndex === -1) {
+            showToast("找不到候選圖片索引，請重新掃描資料庫。", "error");
+            return;
+        }
+
+        this.currentImgIndex = masterIndex;
+
+        // 進入標註主畫布
+        this.switchView("label-view");
+
+        // 載入圖片與 AI Bbox
+        this.loadImgToLabelView(masterIndex);
+
+        // 顯示與更新 Review UI
+        this.enableReviewEditorUi();
+        this.updateReviewProgressText();
+
+        showToast(`已進入候選審核模式：1 / ${this.reviewQueue.length}`, "success");
+    },
+
+    enableReviewEditorUi() {
+        const bar = document.getElementById("review-editor-bar");
+        if (bar) {
+            bar.style.display = this.reviewMode ? "flex" : "none";
+        }
+    },
+
+    updateReviewProgressText() {
+        const progressEl = document.getElementById("review-progress-text");
+        const fileEl = document.getElementById("review-current-file");
+        if (this.reviewMode && this.reviewQueue.length > 0) {
+            const currentItem = this.reviewQueue[this.currentReviewIndex];
+            const filename = currentItem.path.split('/').pop().split('\\').pop();
+            
+            if (progressEl) progressEl.textContent = `${this.currentReviewIndex + 1} / ${this.reviewQueue.length}`;
+            if (fileEl) fileEl.textContent = filename;
+        }
+    },
+
+    async acceptCurrentReviewLabel() {
+        if (this.currentImgIndex < 0) return;
+        const img = this.images[this.currentImgIndex];
+
+        // 抓取當前 ImageLabeler 中的框
+        let labelStr = "";
+        if (typeof ImageLabeler !== "undefined" && ImageLabeler.getLabelString) {
+            labelStr = ImageLabeler.getLabelString();
+        }
+
+        if (!labelStr || labelStr === "[]") {
+            showToast("目前沒有標註框，無法接受。", "warn");
+            return;
+        }
+
+        this.labelDataCache[img.path] = {
+            label: labelStr,
+            status: "done"
+        };
+
+        try {
+            await API.saveLabels(this.labelDataCache);
+            showToast("已接受此候選標註", "success");
+            this.gotoNextReviewCandidate();
+        } catch (err) {
+            showToast(`接受標註失敗: ${err.message}`, "error");
+        }
+    },
+
+    async saveReviewAndNext() {
+        if (this.currentImgIndex < 0) return;
+        const img = this.images[this.currentImgIndex];
+
+        let labelStr = "";
+        if (typeof ImageLabeler !== "undefined" && ImageLabeler.getLabelString) {
+            labelStr = ImageLabeler.getLabelString();
+        }
+
+        if (!labelStr || labelStr === "[]") {
+            const confirmEmpty = confirm("目前沒有任何標註框，是否將此圖片保持 pending 並跳到下一張？");
+            if (!confirmEmpty) return;
+        } else {
+            this.labelDataCache[img.path] = {
+                label: labelStr,
+                status: "done"
+            };
+
+            try {
+                await API.saveLabels(this.labelDataCache);
+            } catch (err) {
+                showToast(`儲存失敗: ${err.message}`, "error");
+                return;
+            }
+        }
+
+        this.gotoNextReviewCandidate();
+    },
+
+    async ignoreCurrentReviewImage() {
+        if (this.currentImgIndex < 0) return;
+        const img = this.images[this.currentImgIndex];
+
+        this.labelDataCache[img.path] = {
+            label: "",
+            status: "ignore"
+        };
+
+        try {
+            await API.saveLabels(this.labelDataCache);
+            showToast("已忽略此圖片", "info");
+            this.gotoNextReviewCandidate();
+        } catch (err) {
+            showToast(`忽略失敗: ${err.message}`, "error");
+        }
+    },
+
+    gotoNextReviewCandidate() {
+        this.reviewQueue = this.getPendingReviewItems();
+
+        if (this.reviewQueue.length === 0) {
+            showToast("候選審核完成，所有候選標註皆已處理。", "success");
+            this.exitReviewMode();
+            return;
+        }
+
+        this.currentReviewIndex = Math.min(this.currentReviewIndex, this.reviewQueue.length - 1);
+        if (this.currentReviewIndex < 0) {
+            this.currentReviewIndex = 0;
+        }
+
+        const next = this.reviewQueue[this.currentReviewIndex];
+        const masterIndex = this.masterImageIndexLookup(next.path);
+
+        if (masterIndex !== -1) {
+            this.currentImgIndex = masterIndex;
+            this.loadImgToLabelView(masterIndex);
+            this.updateReviewProgressText();
+        } else {
+            showToast("無法定位下一張候選圖片", "error");
+            this.exitReviewMode();
+        }
+    },
+
+    exitReviewMode() {
+        this.reviewMode = false;
+        this.reviewQueue = [];
+        this.currentReviewIndex = -1;
+        this.enableReviewEditorUi();
+        this.scanDataset();
+        this.switchWorkspaceTab("annotation-view", "ann-review");
+        showToast("已離開候選審核模式", "info");
     }
 };
 

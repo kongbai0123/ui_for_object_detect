@@ -525,10 +525,10 @@
                             <li class="menu-item active" data-tab="ann-manual"><i class="fa-solid fa-marker"></i> 手動標註 (Manual Label)</li>
                             <li class="menu-item" data-tab="ann-unlabeled"><i class="fa-solid fa-images"></i> 未標註資料池 (Unlabeled)</li>
                             <li class="menu-item" data-tab="ann-auto"><i class="fa-solid fa-robot"></i> 自動標註 (Auto Label)</li>
-                            <li class="menu-item" data-tab="ann-review"><i class="fa-solid fa-user-check"></i> 候選審核 (Review)</li>
-                            <li class="menu-item" data-tab="ann-verified"><i class="fa-solid fa-clipboard-check"></i> 已確認標註 (Verified)</li>
-                            <li class="menu-item" data-tab="ann-quality"><i class="fa-solid fa-circle-nodes"></i> 標註品質檢查 (Quality)</li>
-                            <li class="menu-item" data-tab="ann-version"><i class="fa-solid fa-code-branch"></i> 標註版本 (Label Version)</li>
+                            <li class="menu-item" data-tab="ann-review"><i class="fa-solid fa-user-check"></i> 待審核標註 (Pending Review)</li>
+                            <li class="menu-item" data-tab="ann-verified"><i class="fa-solid fa-clipboard-check"></i> 已確認標註 (Verified Labels)</li>
+                            <li class="menu-item" data-tab="ann-quality"><i class="fa-solid fa-circle-nodes"></i> 標註錯誤檢查 (Annotation QA)</li>
+                            <li class="menu-item" data-tab="ann-version"><i class="fa-solid fa-code-branch"></i> 標籤版本備份 (Label Versions)</li>
                         </ul>
                         <div class="sidebar-footer">
                             <button class="btn btn-secondary btn-back-home" style="width: 100%;"><i class="fa-solid fa-arrow-left"></i> 返回首頁</button>
@@ -560,6 +560,20 @@
 
                                 <!-- 2. 畫布主要編輯區 -->
                                 <div class="canvas-panel glass-panel" style="flex-grow: 1; padding: 12px; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
+                                    <!-- Candidate Review Editor Bar -->
+                                    <div id="review-editor-bar" class="review-editor-bar" style="display: none; align-items: center; justify-content: space-between; background: rgba(26, 36, 56, 0.85); border: 1px solid var(--neon-blue); border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; font-size: 0.88rem; backdrop-filter: blur(10px); gap: 12px;">
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <span style="background: var(--neon-blue); color: #000; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.75rem;">候選審核模式</span>
+                                            <span id="review-progress-text" style="color: var(--text-primary); font-weight: 600;">0 / 0</span>
+                                            <span id="review-current-file" style="color: var(--text-secondary); font-family: monospace;"></span>
+                                        </div>
+                                        <div class="review-actions" style="display: flex; gap: 8px;">
+                                            <button class="btn btn-success btn-sm" id="btn-review-accept"><i class="fa-solid fa-check"></i> 接受此標註</button>
+                                            <button class="btn btn-primary btn-sm" id="btn-review-save-next"><i class="fa-solid fa-floppy-disk"></i> 儲存並下一張</button>
+                                            <button class="btn btn-danger btn-sm" id="btn-review-ignore"><i class="fa-solid fa-eye-slash"></i> 忽略此圖</button>
+                                            <button class="btn btn-secondary btn-sm" id="btn-review-exit"><i class="fa-solid fa-right-from-bracket"></i> 離開審核</button>
+                                        </div>
+                                    </div>
                                     <div class="canvas-container" id="canvas-container-div" style="flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #050508; border-radius: 12px; overflow: hidden;">
                                         <canvas id="label-canvas"></canvas>
                                         <div class="canvas-placeholder" id="canvas-empty-overlay" style="position: absolute;">
@@ -739,11 +753,30 @@
                         <!-- Tab: Review -->
                         <div class="workspace-tab-content" data-tab-content="ann-review" style="display: none;">
                             <div class="workspace-tab-header">
-                                <h2>候選標籤審核中心</h2>
+                                <h2>待審核標註 (Pending Review)</h2>
                                 <p>審核自動標註引擎產生的標籤。您可以快速批量接受或修正低信心度樣本。</p>
                             </div>
+                            <div class="glass-panel" style="margin-top: 16px; margin-bottom: 16px;">
+                                <div class="section-title"><i class="fa-solid fa-magnifying-glass-chart"></i> 候選標註佇列狀態</div>
+                                <div class="review-summary-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px;">
+                                    <div class="stat-card" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; text-align: center;">
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary);">待審核圖片數</div>
+                                        <div id="review-pending-count" style="font-size: 1.5rem; font-weight: bold; color: var(--neon-blue); margin-top: 4px;">0</div>
+                                    </div>
+                                    <div class="stat-card" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; text-align: center;">
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary);">候選標註框總數</div>
+                                        <div id="review-box-count" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-color); margin-top: 4px;">0</div>
+                                    </div>
+                                    <div class="stat-card" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; text-align: center; display: flex; align-items: center; justify-content: center;">
+                                        <button class="btn btn-primary" id="btn-start-review-editor" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: bold;">
+                                            <i class="fa-solid fa-play"></i> 開始逐張審核
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="glass-panel" style="margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-user-check"></i> 自動候選標籤審核佇列 (Pending Review)</div>
+                                <div class="section-title"><i class="fa-solid fa-user-check"></i> 待審核標註佇列 (Pending Review)</div>
                                 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; max-height: 400px; overflow-y: auto;" id="review-gallery-container">
                                     <div class="empty-hint">無待審核的候選標籤。</div>
                                 </div>
@@ -753,8 +786,8 @@
                         <!-- Tab: Verified -->
                         <div class="workspace-tab-content" data-tab-content="ann-verified" style="display: none;">
                             <div class="workspace-tab-header">
-                                <h2>已確認標註資料</h2>
-                                <p>顯示所有經過人工審核確認（Verified）的黃金標準數據集，隨時可進行樣本分配。</p>
+                                <h2>已確認標註 (Verified Labels)</h2>
+                                <p>顯示所有經過人工審核確認的黃金標準數據集，隨時可進行樣本分配。</p>
                             </div>
                             <div class="glass-panel" style="margin-top: 16px;">
                                 <div class="section-title"><i class="fa-solid fa-check-double"></i> Verified Pool</div>
@@ -767,61 +800,51 @@
                         <!-- Tab: Quality -->
                         <div class="workspace-tab-content" data-tab-content="ann-quality" style="display: none;">
                             <div class="workspace-tab-header">
-                                <h2>標註品質檢查</h2>
-                                <p>智慧型診斷標記衝突，偵測邊界框（Bounding Box）異常與標籤缺失。</p>
+                                <h2>標註錯誤檢查 (Annotation QA)</h2>
+                                <p>智慧型診斷並檢查標註框（Bounding Box）異常、重疊框與標籤缺失。</p>
                             </div>
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
                                 <div class="section-title"><i class="fa-solid fa-triangle-exclamation"></i> 標記錯誤與衝突警告</div>
-                                <div style="display: flex; flex-direction: column; gap: 8px;">
-                                    <div class="guide-warning-item warn">
-                                        <i class="fa-solid fa-triangle-exclamation"></i>
-                                        <span><b>4</b> 處 Bounding Box 太小 (寬高小於 5 像素)，可能影響模型收斂。</span>
-                                    </div>
-                                    <div class="guide-warning-item warn">
-                                        <i class="fa-solid fa-triangle-exclamation"></i>
-                                        <span><b>2</b> 張圖片標註框超出影像邊界，已被自動裁切適配。</span>
-                                    </div>
-                                    <div class="guide-warning-item info">
-                                        <i class="fa-solid fa-circle-check"></i>
-                                        <span>未發現類別名稱衝突與重疊框率 (IoU > 0.95) 異常。</span>
+                                <div id="qa-warnings-container" style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div class="guide-warning-item info" style="display: flex; align-items: flex-start; gap: 10px; background: rgba(46, 204, 113, 0.1); border: 1px solid rgba(46, 204, 113, 0.2); padding: 12px; border-radius: 8px; color: var(--text-primary);">
+                                        <i class="fa-solid fa-circle-info" style="color: var(--neon-blue); margin-top: 3px;"></i>
+                                        <div>
+                                            <strong style="display: block; font-size: 13px; color: var(--neon-blue);">尚未進行檢查</strong>
+                                            <span style="font-size: 12px; color: var(--text-secondary);">請點擊下方按鈕重新掃描標註品質。</span>
+                                        </div>
                                     </div>
                                 </div>
-                                <button class="btn btn-secondary" style="margin-top: 16px; width: 100%;"><i class="fa-solid fa-arrows-spin"></i> 重新執行標記品質深度掃描</button>
+                                <button class="btn btn-secondary" id="btn-run-qa-scan" style="margin-top: 16px; width: 100%;"><i class="fa-solid fa-arrows-spin"></i> 重新執行標記品質深度掃描</button>
                             </div>
                         </div>
 
                         <!-- Tab: Label Version -->
                         <div class="workspace-tab-content" data-tab-content="ann-version" style="display: none;">
                             <div class="workspace-tab-header">
-                                <h2>標註版本</h2>
-                                <p>為當前的 `labels.csv` 及 XML/JSON 標註元資料庫建立歷史版本。</p>
+                                <h2>標籤版本備份 (Label Versions)</h2>
+                                <p>為當前的 `labels.csv` 備份或還原歷史版本。</p>
                             </div>
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-code-branch"></i> 標籤歷史備份紀錄</div>
+                                <div class="section-title"><i class="fa-solid fa-code-branch"></i> 建立與管理標籤歷史版本</div>
+                                
+                                <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                                    <input type="text" id="input-new-version-name" placeholder="請輸入備份版本名稱或備註 (例如: 自動標註前)" class="form-control" style="flex: 1; padding: 8px 12px; border-radius: 6px; background: var(--bg-dark); border: 1px solid var(--border-color); color: var(--text-primary);">
+                                    <button class="btn btn-primary" id="btn-create-label-version"><i class="fa-solid fa-plus"></i> 建立標籤版本備份</button>
+                                </div>
+
                                 <table class="results-table" style="width: 100%;">
                                     <thead>
                                         <tr>
-                                            <th>版本</th>
+                                            <th>版本備註</th>
                                             <th>標記框總數</th>
-                                            <th>已確認圖片數</th>
+                                            <th>已標註圖片數</th>
                                             <th>存檔時間</th>
                                             <th>操作</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="label-versions-tbody">
                                         <tr>
-                                            <td>label_v0.3</td>
-                                            <td>1,842 個</td>
-                                            <td>892 張</td>
-                                            <td>2026-06-12 11:30</td>
-                                            <td><span class="val badge done">套用中</span></td>
-                                        </tr>
-                                        <tr>
-                                            <td>label_v0.2</td>
-                                            <td>1,510 個</td>
-                                            <td>720 張</td>
-                                            <td>2026-06-10 14:20</td>
-                                            <td><button class="btn btn-secondary btn-sm">還原此版標籤</button></td>
+                                            <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 20px;">載入中...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -882,7 +905,7 @@
                         </div>
                         <ul class="sidebar-menu">
                             <li class="menu-item active" data-tab="dist-split"><i class="fa-solid fa-chart-gantt"></i> 資料集切分 (Dataset Split)</li>
-                            <li class="menu-item" data-tab="dist-aug"><i class="fa-solid fa-wand-magic-sparkles"></i> 品質分析與增強 (Augmentation)</li>
+                            <li class="menu-item" data-tab="dist-aug"><i class="fa-solid fa-wand-magic-sparkles"></i> 數據品質與增強 (Dataset Quality & Augmentation)</li>
                             <li class="menu-item" data-tab="dist-export"><i class="fa-solid fa-file-export"></i> 資料集匯出 (Dataset Export)</li>
                         </ul>
                         <div class="sidebar-footer">

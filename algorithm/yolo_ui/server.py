@@ -1970,6 +1970,155 @@ def run_auto_label_legacy(payload: AutoLabelPayload):
     return start_auto_label(payload)
 
 
+@app.post("/api/labels/version/create")
+def create_label_version(payload: Dict):
+    if not active_project["input_path"]:
+        raise HTTPException(status_code=400, detail="沒有啟用中的專案")
+    
+    input_dir = Path(active_project["input_path"])
+    csv_file = input_dir / "labels.csv"
+    if not csv_file.exists():
+        raise HTTPException(status_code=400, detail="目前專案沒有 labels.csv 檔案，無法備份")
+        
+    version_name = payload.get("version_name", "").strip()
+    if not version_name:
+        version_name = "backup"
+        
+    # 過濾非法字元
+    version_name = "".join([c for c in version_name if c.isalnum() or c in ('_', '-')])
+    
+    # 建立目錄
+    versions_dir = input_dir / "label_versions"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 計算標記框與已確認圖片
+    total_boxes = 0
+    verified_images = 0
+    import csv
+    try:
+        with open(csv_file, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                lbl = row.get("label", "")
+                status = row.get("status", "")
+                if status in ["done", "verified"]:
+                    verified_images += 1
+                if lbl and lbl != "[]":
+                    try:
+                        boxes = json.loads(lbl)
+                        total_boxes += len(boxes)
+                    except:
+                        pass
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"讀取 labels.csv 統計失敗: {str(e)}")
+        
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    version_id = f"label_{timestamp}_{version_name}"
+    backup_file_name = f"labels_{timestamp}_{version_name}.csv"
+    backup_path = versions_dir / backup_file_name
+    
+    try:
+        shutil.copy2(csv_file, backup_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"備份 labels.csv 失敗: {str(e)}")
+        
+    # 寫入 versions.json
+    versions_json_path = versions_dir / "versions.json"
+    versions = []
+    if versions_json_path.exists():
+        try:
+            with open(versions_json_path, "r", encoding="utf-8") as f:
+                versions = json.load(f)
+        except:
+            versions = []
+            
+    new_version_info = {
+        "version": version_id,
+        "name": version_name,
+        "total_boxes": total_boxes,
+        "verified_images": verified_images,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "file": backup_file_name
+    }
+    
+    versions.insert(0, new_version_info)
+    
+    try:
+        with open(versions_json_path, "w", encoding="utf-8") as f:
+            json.dump(versions, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"寫入 versions.json 失敗: {str(e)}")
+        
+    return {"status": "success", "message": f"標籤版本 {version_name} 已成功備份", "version": new_version_info}
+
+
+@app.get("/api/labels/version/list")
+def list_label_versions():
+    if not active_project["input_path"]:
+        raise HTTPException(status_code=400, detail="沒有啟用中的專案")
+        
+    input_dir = Path(active_project["input_path"])
+    versions_json_path = input_dir / "label_versions" / "versions.json"
+    
+    if not versions_json_path.exists():
+        return {"status": "success", "versions": []}
+        
+    try:
+        with open(versions_json_path, "r", encoding="utf-8") as f:
+            versions = json.load(f)
+        return {"status": "success", "versions": versions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"無法讀取版本列表: {str(e)}")
+
+
+@app.post("/api/labels/version/restore")
+def restore_label_version(payload: Dict):
+    if not active_project["input_path"]:
+        raise HTTPException(status_code=400, detail="沒有啟用中的專案")
+        
+    version_id = payload.get("version")
+    if not version_id:
+        raise HTTPException(status_code=400, detail="未指定版本 ID")
+        
+    input_dir = Path(active_project["input_path"])
+    versions_dir = input_dir / "label_versions"
+    versions_json_path = versions_dir / "versions.json"
+    
+    if not versions_json_path.exists():
+        raise HTTPException(status_code=404, detail="找不到版本記錄檔")
+        
+    try:
+        with open(versions_json_path, "r", encoding="utf-8") as f:
+            versions = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"讀取版本記錄檔失敗: {str(e)}")
+        
+    target_version = None
+    for v in versions:
+        if v["version"] == version_id:
+            target_version = v
+            break
+            
+    if not target_version:
+        raise HTTPException(status_code=404, detail="指定的版本不存在")
+        
+    backup_file = versions_dir / target_version["file"]
+    if not backup_file.exists():
+        raise HTTPException(status_code=404, detail=f"版本備份檔案 {target_version['file']} 不存在")
+        
+    csv_file = input_dir / "labels.csv"
+    
+    try:
+        tmp_backup = versions_dir / f"labels_auto_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        if csv_file.exists():
+            shutil.copy2(csv_file, tmp_backup)
+            
+        shutil.copy2(backup_file, csv_file)
+        return {"status": "success", "message": f"已成功還原為版本 {target_version['name']}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"還原版本失敗: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
