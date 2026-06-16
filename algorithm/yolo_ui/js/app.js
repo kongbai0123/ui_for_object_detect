@@ -1159,8 +1159,21 @@ const App = {
 
             // 初始化標籤頁的圖片資訊
             setElText("total-img-count", this.images.length);
-            if (this.images.length > 0 && this.currentImgIndex === -1) {
-                this.loadImgToLabelView(0);
+            if (this.images.length > 0) {
+                if (this.currentImgIndex < 0 || this.currentImgIndex >= this.images.length) {
+                    this.currentImgIndex = 0;
+                }
+                this.loadImgToLabelView(this.currentImgIndex);
+            } else {
+                this.currentImgIndex = -1;
+                setElText("current-img-index", "0");
+                setElText("img-name-display", "無圖片");
+                setElText("info-filename", "-");
+                const badge = document.getElementById("info-status");
+                if (badge) {
+                    badge.className = "val badge pending";
+                    badge.textContent = "-";
+                }
             }
 
             // 自動更新 Smart Guides

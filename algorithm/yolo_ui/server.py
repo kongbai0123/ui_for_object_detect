@@ -42,6 +42,24 @@ ui_path = Path(__file__).parent.resolve()
 app.mount("/css", StaticFiles(directory=str(ui_path / "css")), name="css")
 app.mount("/js", StaticFiles(directory=str(ui_path / "js")), name="js")
 
+@app.get("/images/{file_path:path}")
+def get_project_image(file_path: str):
+    if not active_project["input_path"]:
+        raise HTTPException(status_code=400, detail="沒有啟用中的專案")
+    
+    input_dir = Path(active_project["input_path"]).resolve()
+    full_path = (input_dir / file_path).resolve()
+    
+    # 預防路徑遍歷攻擊
+    if not str(full_path).startswith(str(input_dir)):
+        raise HTTPException(status_code=403, detail="存取被拒絕")
+        
+    if not full_path.exists() or not full_path.is_file():
+        raise HTTPException(status_code=404, detail="圖片不存在")
+        
+    from fastapi.responses import FileResponse
+    return FileResponse(str(full_path))
+
 @app.get("/")
 def read_index():
     from fastapi.responses import FileResponse
@@ -180,20 +198,6 @@ def create_project(cfg: ProjectConfig):
         "task_type": task_type
     })
     save_registered_projects(projects)
-
-    # 動態掛載靜態檔案目錄，以便前端讀取圖片
-    try:
-        found = False
-        for route in app.routes:
-            if hasattr(route, "path") and route.path == "/images":
-                if hasattr(route, "app") and hasattr(route.app, "directory"):
-                    route.app.directory = str(input_path)
-                    found = True
-                    break
-        if not found:
-            app.mount("/images", StaticFiles(directory=str(input_path)), name="images")
-    except Exception as e:
-        print(f"動態掛載目錄出錯: {e}")
         
     return active_project
 
@@ -279,12 +283,6 @@ def update_project(cfg: ProjectUpdate):
     config_file = input_path / "project_config.json"
     with open(config_file, "w", encoding="utf-8") as f:
         json.dump(active_project, f, indent=4, ensure_ascii=False)
-        
-    # 動態重新掛載靜態圖片目錄
-    try:
-        app.mount("/images", StaticFiles(directory=str(input_path)), name="images")
-    except RuntimeError:
-        pass
         
     return active_project
 
@@ -942,20 +940,6 @@ def switch_project(req: SwitchProjectRequest):
         with open(config_file, "r", encoding="utf-8") as f:
             active_project = json.load(f)
             active_project["status"] = "active"
-
-    # 動態更新掛載點
-    try:
-        found = False
-        for route in app.routes:
-            if hasattr(route, "path") and route.path == "/images":
-                if hasattr(route, "app") and hasattr(route.app, "directory"):
-                    route.app.directory = active_project["input_path"]
-                    found = True
-                    break
-        if not found:
-            app.mount("/images", StaticFiles(directory=active_project["input_path"]), name="images")
-    except Exception as e:
-        print(f"動態掛載目錄出錯: {e}")
 
     # 也更新到 projects.json 中
     projects = get_registered_projects()
