@@ -1,5 +1,6 @@
 // 專案主控制邏輯
 const App = {
+    initialized: false,
     // 全域專案狀態
     projectLoaded: false,
     projectName: "",
@@ -151,6 +152,12 @@ const App = {
     },
 
     init() {
+        if (this.initialized) {
+            console.warn("[APP] App.init() already executed, skip duplicate binding.");
+            return;
+        }
+        this.initialized = true;
+
         this.validateDomContract();
 
         // 1. 初始化頁面導航
@@ -684,6 +691,83 @@ const App = {
         this.scanDataset();
     },
 
+    async addClassByPrompt() {
+        const newCls = prompt("請輸入新增類別名稱：");
+        if (!newCls || !newCls.trim()) return;
+
+        const cleanCls = newCls.trim().toLowerCase();
+
+        // 規則檢測 (僅允許英文、數字、底線與連字號)
+        if (!/^[a-z0-9_-]+$/.test(cleanCls)) {
+            showToast("類別名稱只能使用英文、數字、底線或連字號", "warn");
+            return;
+        }
+
+        if (this.classes.includes(cleanCls)) {
+            showToast("此類別已存在！", "warn");
+            return;
+        }
+
+        this.classes.push(cleanCls);
+
+        if (typeof ImageLabeler !== "undefined" && ImageLabeler.setClassColors) {
+            ImageLabeler.setClassColors(this.classes);
+        }
+
+        this.renderClassTags();
+        this.updateClassSelectorList();
+        await this.persistProjectClasses();
+
+        showToast(`已新增類別: ${cleanCls}`, "success");
+    },
+
+    async persistProjectClasses() {
+        if (!this.projectLoaded || !this.inputPath) return;
+
+        const outputPath = this.el("output-path-display")?.value || `${this.inputPath}/runs`;
+
+        try {
+            const res = await fetch(`${API_BASE}/api/project/update`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    input_path: this.inputPath,
+                    output_path: outputPath,
+                    classes: this.classes
+                })
+            });
+            if (!res.ok) throw new Error("後端保存類別更新失敗");
+            const project = await res.json();
+            this.onProjectLoaded(project);
+        } catch (err) {
+            console.warn("[CLASS-SAVE] Failed to persist classes:", err);
+            showToast("類別已更新於前端，但保存到專案設定失敗", "warn");
+        }
+    },
+
+    /**
+     * chooseFolderOnce()
+     * 防重複呼叫的目錄選擇方法。
+     * 若上一次 chooseDirectory 尚未結束，直接返回 null 避免重複彈出系統 dialog。
+     */
+    _choosingFolder: false,
+    async chooseFolderOnce() {
+        if (this._choosingFolder) {
+            console.warn("[FOLDER] chooseFolderOnce already in progress, ignoring duplicate call.");
+            return null;
+        }
+        this._choosingFolder = true;
+        try {
+            const res = await API.chooseDirectory();
+            return res;
+        } catch (err) {
+            console.warn("[FOLDER] chooseDirectory failed:", err);
+            return null;
+        } finally {
+            this._choosingFolder = false;
+        }
+    },
+
     // ==========================================================================
     // 01. 資料頁面
     // ==========================================================================
@@ -693,24 +777,8 @@ const App = {
         this.on("btn-save-project-state", "click", () => this.saveProjectState());
         this.on("btn-ds-checker-refresh", "click", () => this.runDatasetChecker());
 
-        // Train 頁面的類別新增按鈕
-        this.on("btn-train-add-class", "click", () => {
-            const newCls = prompt("請輸入新增類別名稱：");
-            if (newCls && newCls.trim()) {
-                const cleanCls = newCls.trim().toLowerCase();
-                if (this.classes.includes(cleanCls)) {
-                    showToast("此類別已存在！", "warn");
-                    return;
-                }
-                this.classes.push(cleanCls);
-                if (typeof ImageLabeler !== "undefined" && ImageLabeler.setClassColors) {
-                    ImageLabeler.setClassColors(this.classes);
-                }
-                this.renderClassTags();
-                this.updateClassSelectorList();
-                showToast(`已新增類別: ${cleanCls}`, "success");
-            }
-        });
+        // Train 頁面的類別新增按鈕 (統一使用 addClassByPrompt，防止重複 prompt)
+        this.on("btn-train-add-class", "click", () => this.addClassByPrompt());
 
         // 資料頁面中的資料夾選擇按鈕 (點選可直接切換工作區，並連動 Output)
         this.on("btn-data-choose-dir", "click", async () => {
@@ -1086,23 +1154,8 @@ const App = {
             this.switchWorkspaceTab("distribution-view", "dist-split");
         });
 
-        // 新增類別
-        this.on("btn-add-class", "click", () => {
-            const newCls = prompt("請輸入新增類別名稱：");
-            if (newCls && newCls.trim()) {
-                const cleanCls = newCls.trim().toLowerCase();
-                if (this.classes.includes(cleanCls)) {
-                    showToast("此類別已存在！", "warn");
-                    return;
-                }
-                this.classes.push(cleanCls);
-                if (typeof ImageLabeler !== "undefined" && ImageLabeler.setClassColors) {
-                    ImageLabeler.setClassColors(this.classes);
-                }
-                this.updateClassSelectorList();
-                showToast(`已新增類別: ${cleanCls}`, "success");
-            }
-        });
+        // 新增類別 (統一使用 addClassByPrompt，防止重複 prompt)
+        this.on("btn-add-class", "click", () => this.addClassByPrompt());
 
         // 綁定標籤頁資料匯入 Modal 顯示與隱藏
         this.on("btn-label-import-modal", "click", () => {
@@ -1382,10 +1435,109 @@ const App = {
         }
     },
 
+    applyModelPreset(modelId) {
+        if (!this.modelRegistry) return;
+        
+        let foundModel = null;
+        const tasks = this.modelRegistry.tasks || {};
+        for (const taskName in tasks) {
+            const models = tasks[taskName].models || [];
+            foundModel = models.find(m => m.id === modelId);
+            if (foundModel) break;
+        }
+        
+        if (!foundModel) return;
+        
+        // 1. 套用解析度
+        const imgSize = foundModel.default_img_size;
+        if (imgSize) {
+            const sizeSelect = document.getElementById("train-img-size");
+            if (sizeSelect) {
+                let hasOpt = Array.from(sizeSelect.options).some(opt => opt.value == imgSize);
+                if (!hasOpt) {
+                    const opt = document.createElement("option");
+                    opt.value = imgSize;
+                    opt.textContent = `${imgSize} x ${imgSize}`;
+                    sizeSelect.appendChild(opt);
+                }
+                sizeSelect.value = imgSize.toString();
+            }
+        }
+        
+        // 2. 套用批次大小
+        const batchSize = foundModel.default_batch_size;
+        if (batchSize) {
+            const batchSelect = document.getElementById("train-batch");
+            if (batchSelect) {
+                let hasOpt = Array.from(batchSelect.options).some(opt => opt.value == batchSize);
+                if (!hasOpt) {
+                    const opt = document.createElement("option");
+                    opt.value = batchSize;
+                    opt.textContent = batchSize.toString();
+                    batchSelect.appendChild(opt);
+                }
+                batchSelect.value = batchSize.toString();
+            }
+        }
+        
+        // 3. 套用優化器
+        const optimizer = foundModel.default_optimizer;
+        if (optimizer) {
+            const optSelect = document.getElementById("train-optimizer");
+            if (optSelect) {
+                let hasOpt = Array.from(optSelect.options).some(opt => opt.value == optimizer);
+                if (!hasOpt) {
+                    const opt = document.createElement("option");
+                    opt.value = optimizer;
+                    opt.textContent = optimizer;
+                    optSelect.appendChild(opt);
+                }
+                optSelect.value = optimizer;
+            }
+        }
+        
+        // 4. 套用學習率
+        const lr = foundModel.default_lr;
+        if (lr !== undefined && lr !== null) {
+            const lrSelect = document.getElementById("train-lr");
+            if (lrSelect) {
+                let hasOpt = Array.from(lrSelect.options).some(opt => opt.value == lr);
+                if (!hasOpt) {
+                    const opt = document.createElement("option");
+                    opt.value = lr;
+                    opt.textContent = lr.toString();
+                    lrSelect.appendChild(opt);
+                }
+                lrSelect.value = lr.toString();
+            }
+        }
+    },
+
     // ==========================================================================
     // 03. 訓練設定與控制
     // ==========================================================================
     setupTrainPageEvents() {
+        // 異步加載模型註冊表與套用 Preset
+        (async () => {
+            try {
+                this.modelRegistry = await API.getModelRegistry();
+                const modelSelect = document.getElementById("train-model");
+                if (modelSelect) {
+                    this.applyModelPreset(modelSelect.value);
+                }
+            } catch (err) {
+                console.error("[PRESET] 載入模型註冊表失敗:", err);
+            }
+        })();
+
+        // 綁定模型選擇改變事件
+        const modelSelect = document.getElementById("train-model");
+        if (modelSelect) {
+            modelSelect.addEventListener("change", (e) => {
+                this.applyModelPreset(e.target.value);
+            });
+        }
+
         // 資料切分比例聯動
         const sTrain = this.el("slider-train");
         const sVal = this.el("slider-val");
@@ -3687,26 +3839,30 @@ names:
             this.setAnnotationMode("auto");
         });
 
-        // 自動標註目標影像目錄選擇按鈕
+        // 自動標註目標影像目錄選擇按鈕 (使用 chooseFolderOnce 防重複彈出 dialog)
         this.on("btn-auto-label-choose-dir", "click", async () => {
-            try {
-                const res = await API.chooseDirectory();
-                if (res.status === "success" && res.path) {
-                    this.value("auto-label-path-display", res.path);
-                    showToast(`已選擇自動標註目標目錄: ${res.path}`, "success");
-                }
-            } catch (err) {
-                showToast(`選擇資料夾失敗: ${err.message}`, "error");
+            const res = await this.chooseFolderOnce();
+            if (res && res.status === "success" && res.path) {
+                this.value("auto-label-path-display", res.path);
+                showToast(`已選擇自動標註目標目錄: ${res.path}`, "success");
             }
         });
 
         // 執行自動標註任務按鈕
         this.on("btn-run-autolabel", "click", async () => {
             const dirInput = document.getElementById("auto-label-path-display");
-            const dirPath = dirInput ? dirInput.value.trim() : "";
+            let dirPath = dirInput ? dirInput.value.trim() : "";
+
+            // 若未選擇目標目錄，自動使用當前專案的 inputPath 作為預設
             if (!dirPath) {
-                showToast("請先選擇自動標註目標目錄！", "warn");
-                return;
+                if (this.inputPath) {
+                    dirPath = this.inputPath;
+                    if (dirInput) dirInput.value = dirPath;
+                    showToast(`未指定目標目錄，自動使用專案資料目錄: ${dirPath}`, "info");
+                } else {
+                    showToast("請先選擇自動標註目標目錄！", "warn");
+                    return;
+                }
             }
 
             if (!this.projectLoaded) {
