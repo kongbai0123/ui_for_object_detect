@@ -187,14 +187,14 @@
                             <button class="btn btn-primary btn-enter-flow" data-target="database-view">進入資料庫</button>
                         </div>
 
-                        <!-- 卡片 2: 自動標註 -->
+                        <!-- 卡片 2: 自動標註與修正 -->
                         <div class="flow-card" id="card-auto-run">
                             <div class="flow-card-badge status-gray">未開始</div>
                             <div class="flow-card-icon"><i class="fa-solid fa-robot"></i></div>
                             <div class="flow-card-content">
-                                <h3>2. 自動標註</h3>
-                                <p class="flow-card-sub">Auto Labeling</p>
-                                <p class="flow-card-desc">配置推理模型與信心度閾值，執行背景批次自動推理標記</p>
+                                <h3>2. 自動標註與修正</h3>
+                                <p class="flow-card-sub">Auto Label & Correction</p>
+                                <p class="flow-card-desc">配置推理模型與信心度閾值，執行自動推理並進入畫布人工修正</p>
                                 <div class="flow-card-metrics">
                                     <div class="metric-row"><span>標記模型：</span><b>YOLOv8x (預設)</b></div>
                                     <div class="metric-row"><span>信心度門檻：</span><b>0.25</b></div>
@@ -204,27 +204,27 @@
                                     <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先設定目錄並啟動自動標註。
                                 </div>
                             </div>
-                            <button class="btn btn-secondary btn-enter-flow" data-target="annotation-view" data-tab="ann-auto">進入自動標註</button>
+                            <button class="btn btn-secondary btn-enter-flow" data-target="annotation-view" data-tab="ann-auto">進入自動標註與修正</button>
                         </div>
 
-                        <!-- 卡片 3: 資料分析 -->
+                        <!-- 卡片 3: 資料集準備 -->
                         <div class="flow-card" id="card-auto-analysis">
                             <div class="flow-card-badge status-gray">未開始</div>
-                            <div class="flow-card-icon"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+                            <div class="flow-card-icon"><i class="fa-solid fa-scissors"></i></div>
                             <div class="flow-card-content">
-                                <h3>3. 資料分析</h3>
-                                <p class="flow-card-sub">Data Analysis</p>
-                                <p class="flow-card-desc">檢查自動標註的樣本是否理想，不理想則可快速載入並手動修改標記框位置</p>
+                                <h3>3. 資料集準備</h3>
+                                <p class="flow-card-sub">Dataset Preparation</p>
+                                <p class="flow-card-desc">切分 Train/Val/Test、類別與場景平衡、資料增強及匯出</p>
                                 <div class="flow-card-metrics">
-                                    <div class="metric-row"><span>待審核數：</span><b class="card-auto-pending-count">0</b></div>
-                                    <div class="metric-row"><span>已確認數：</span><b class="card-auto-verified-count">0</b></div>
-                                    <div class="metric-row"><span>樣本健康度：</span><b id="card-auto-analysis-health">-</b></div>
+                                    <div class="metric-row"><span>集分配 (T/V/T)：</span><b class="card-auto-dist-pct">0 / 0 / 0 %</b></div>
+                                    <div class="metric-row"><span>洩漏檢查：</span><b id="card-auto-dist-leakage">-</b></div>
+                                    <div class="metric-row"><span>類別平衡：</span><b id="card-auto-dist-balance">-</b></div>
                                 </div>
                                 <div class="flow-card-guide">
-                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：不理想的自動標註樣本，請手動調整以修正。
+                                    <i class="fa-solid fa-circle-info info-icon"></i> 建議：請先完成自動標註與修正。
                                 </div>
                             </div>
-                            <button class="btn btn-secondary btn-enter-flow" data-target="annotation-view" data-tab="ann-review">進入資料分析</button>
+                            <button class="btn btn-secondary btn-enter-flow" data-target="distribution-view">進入資料集準備</button>
                         </div>
 
                         <!-- 卡片 4: 模型訓練 -->
@@ -544,13 +544,10 @@
                             <span>標註中心</span>
                         </div>
                         <ul class="sidebar-menu">
-                            <li class="menu-item active" data-tab="ann-manual"><i class="fa-solid fa-marker"></i> 手動標註 (Manual Label)</li>
-                            <li class="menu-item" data-tab="ann-unlabeled"><i class="fa-solid fa-images"></i> 未標註資料池 (Unlabeled)</li>
+                            <li class="menu-item active" data-tab="ann-manual"><i class="fa-solid fa-marker"></i> 標註編輯器 (Label Editor)</li>
                             <li class="menu-item" data-tab="ann-auto"><i class="fa-solid fa-robot"></i> 自動標註 (Auto Label)</li>
-                            <li class="menu-item" data-tab="ann-review"><i class="fa-solid fa-user-check"></i> 待審核標註 (Pending Review)</li>
-                            <li class="menu-item" data-tab="ann-verified"><i class="fa-solid fa-clipboard-check"></i> 已確認標註 (Verified Labels)</li>
-                            <li class="menu-item" data-tab="ann-quality"><i class="fa-solid fa-circle-nodes"></i> 標註錯誤檢查 (Annotation QA)</li>
-                            <li class="menu-item" data-tab="ann-version"><i class="fa-solid fa-code-branch"></i> 標籤版本備份 (Label Versions)</li>
+                            <li class="menu-item" data-tab="ann-quality"><i class="fa-solid fa-circle-nodes"></i> 品質錯誤檢查 (Quality QA)</li>
+                            <li class="menu-item" data-tab="ann-version"><i class="fa-solid fa-code-branch"></i> 標籤版本管理 (Label Versions)</li>
                         </ul>
                         <div class="sidebar-footer">
                             <button class="btn btn-secondary btn-back-home" style="width: 100%;"><i class="fa-solid fa-arrow-left"></i> 返回首頁</button>

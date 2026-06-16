@@ -4322,28 +4322,12 @@ names:
             }
         }
         
-        // 標註中心側邊欄與相關選單半透明防呆
+        // 標註中心側邊欄：保留的核心 4 個項目全數顯示
         const sidebar = document.querySelector("#annotation-view .sidebar-menu");
         if (sidebar) {
             sidebar.querySelectorAll("li").forEach(li => {
-                const tab = li.getAttribute("data-tab");
                 li.classList.remove("disabled-semi-transparent");
-                
-                if (mode === "auto") {
-                    // 自動標註模式：排除手動標註與未標註資料池，其餘保留
-                    if (tab === "ann-manual" || tab === "ann-unlabeled") {
-                        li.style.display = "none";
-                    } else {
-                        li.style.display = "";
-                    }
-                } else {
-                    // 手動標註模式（或預設）：排除自動標註與候選審核，其餘保留
-                    if (tab === "ann-auto" || tab === "ann-review") {
-                        li.style.display = "none";
-                    } else {
-                        li.style.display = "";
-                    }
-                }
+                li.style.display = "";
             });
         }
     },
@@ -4781,7 +4765,7 @@ names:
 
         if (this.reviewQueue.length === 0) {
             showToast("自動標註完成，但沒有需要審核的候選框。", "info");
-            this.switchWorkspaceTab("annotation-view", "ann-review");
+            this.switchWorkspaceTab("annotation-view", "ann-manual");
             return;
         }
 
@@ -4939,7 +4923,7 @@ names:
         this.currentReviewIndex = -1;
         this.enableReviewEditorUi();
         this.scanDataset();
-        this.switchWorkspaceTab("annotation-view", "ann-review");
+        this.switchWorkspaceTab("annotation-view", "ann-manual");
         showToast("已離開候選審核模式", "info");
     },
 
