@@ -815,12 +815,8 @@
                             <span>樣本分配與增強</span>
                         </div>
                         <ul class="sidebar-menu">
-                            <li class="menu-item active" data-tab="dist-split"><i class="fa-solid fa-chart-gantt"></i> Train/Val/Test 分配 (Split)</li>
-                            <li class="menu-item" data-tab="dist-strategy"><i class="fa-solid fa-diagram-project"></i> 切分策略 (Split Strategy)</li>
-                            <li class="menu-item" data-tab="dist-balance"><i class="fa-solid fa-scale-balanced"></i> 類別平衡 (Class Balance)</li>
-                            <li class="menu-item" data-tab="dist-scene"><i class="fa-solid fa-mountain-sun"></i> 場景與來源分布 (Scene DB)</li>
-                            <li class="menu-item" data-tab="dist-leakage"><i class="fa-solid fa-shield-virus"></i> 資料洩漏檢查 (Leakage)</li>
-                            <li class="menu-item" data-tab="dist-aug"><i class="fa-solid fa-wand-magic-sparkles"></i> 資料增強 (Augmentation)</li>
+                            <li class="menu-item active" data-tab="dist-split"><i class="fa-solid fa-chart-gantt"></i> 資料集切分 (Dataset Split)</li>
+                            <li class="menu-item" data-tab="dist-aug"><i class="fa-solid fa-wand-magic-sparkles"></i> 品質分析與增強 (Augmentation)</li>
                             <li class="menu-item" data-tab="dist-export"><i class="fa-solid fa-file-export"></i> 資料集匯出 (Dataset Export)</li>
                         </ul>
                         <div class="sidebar-footer">
@@ -830,16 +826,15 @@
 
                     <!-- 中間 Main Workspace -->
                     <div class="workspace-main">
-                        <!-- Tab: Split -->
+                        <!-- Tab: Split (資料集切分) -->
                         <div class="workspace-tab-content" data-tab-content="dist-split" style="display: block;">
                             <div class="workspace-tab-header">
-                                <h2>Train / Val / Test 數據分配</h2>
-                                <p>調整並配置模型訓練集（Train）、驗證集（Val）與獨立測試集（Test）的分配比例。</p>
+                                <h2>資料集劃分與策略</h2>
+                                <p>調整模型訓練集、驗證集與測試集的分配比例，並選擇適配的劃分策略。</p>
                             </div>
+                            <!-- 比例調整 Sliders -->
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
                                 <div class="section-title"><i class="fa-solid fa-chart-pie"></i> 劃分比例調整 (Sliders)</div>
-                                
-                                <!-- 原 train-view 中的切分比例 Sliders -->
                                 <div class="splitter-sliders" style="display: flex; flex-direction: column; gap: 16px;">
                                     <div>
                                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
@@ -867,17 +862,10 @@
                                     <button class="btn btn-primary" id="btn-apply-split"><i class="fa-solid fa-scissors"></i> 鎖定分配比例</button>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Tab: Split Strategy -->
-                        <div class="workspace-tab-content" data-tab-content="dist-strategy" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>切分演算法策略</h2>
-                                <p>選擇適配您影像場景的資料切分算法，避免訓練數據分布偏差。</p>
-                            </div>
+                            <!-- 切分演算法策略 -->
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
                                 <div class="section-title"><i class="fa-solid fa-diagram-project"></i> 選擇劃分演算法</div>
-                                <div class="form-group">
+                                <div class="form-group" style="margin: 0;">
                                     <label>切分策略模式 (Split Strategy)</label>
                                     <select style="width: 100%;" id="select-split-strategy">
                                         <option value="group_stratified" selected>Group Stratified Split (分組分層抽樣，預設推薦)</option>
@@ -892,151 +880,179 @@
                             </div>
                         </div>
 
-                        <!-- Tab: Class Balance -->
-                        <div class="workspace-tab-content" data-tab-content="dist-balance" style="display: none;">
+                        <!-- Tab: Augmentation (品質分析與增強) -->
+                        <div class="workspace-tab-content" data-tab-content="dist-aug" style="display: none;">
                             <div class="workspace-tab-header">
-                                <h2>類別平衡化處理</h2>
-                                <p>當某些類別（少數類）樣本極少時，模型極易忽略少數類。在此處配置資料平衡策略。</p>
+                                <h2>數據品質分析與資料增強</h2>
+                                <p>分析類別不平衡與來源分布，檢測資料洩漏，並配置物理增強以提升模型泛化能力。</p>
                             </div>
-                            <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-scale-balanced"></i> 不平衡校正選項</div>
-                                <div class="form-group">
-                                    <label>平衡策略模式</label>
-                                    <div class="radio-group" style="display: flex; flex-direction: column; gap: 8px;">
-                                        <label class="radio-label">
-                                            <input type="radio" name="dist-balance-opt" value="none">
-                                            <span>None (不進行特殊處理)</span>
-                                        </label>
-                                        <label class="radio-label">
-                                            <input type="radio" name="dist-balance-opt" value="weighted" checked>
-                                            <span>Weighted Loss (損失函數權重校正 - 推薦，給予少數類別更高權重)</span>
-                                        </label>
-                                        <label class="radio-label">
-                                            <input type="radio" name="dist-balance-opt" value="oversampling">
-                                            <span>Oversampling (過抽樣 - 對少數類圖片進行隨機複製擴充 3x)</span>
-                                        </label>
+                            <!-- 品質分析 (雙欄展示) -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 700px; margin-top: 16px;">
+                                <!-- 類別平衡校正 -->
+                                <div class="glass-panel" style="margin: 0;">
+                                    <div class="section-title"><i class="fa-solid fa-scale-balanced"></i> 不平衡校正選項</div>
+                                    <div class="form-group" style="margin: 0;">
+                                        <label>平衡策略模式</label>
+                                        <div class="radio-group" style="display: flex; flex-direction: column; gap: 8px;">
+                                            <label class="radio-label">
+                                                <input type="radio" name="dist-balance-opt" value="none">
+                                                <span>None (不進行特殊處理)</span>
+                                            </label>
+                                            <label class="radio-label">
+                                                <input type="radio" name="dist-balance-opt" value="weighted" checked>
+                                                <span>Weighted Loss (損失函數權重校正 - 推薦)</span>
+                                            </label>
+                                            <label class="radio-label">
+                                                <input type="radio" name="dist-balance-opt" value="oversampling">
+                                                <span>Oversampling (少數類過抽樣 3x)</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- 場景分布 -->
+                                <div class="glass-panel" style="margin: 0;">
+                                    <div class="section-title"><i class="fa-solid fa-mountain-sun"></i> 場景與來源分佈</div>
+                                    <div class="info-list" style="display: flex; flex-direction: column; gap: 6px;">
+                                        <div class="info-item" style="display: flex; justify-content: space-between;"><span>白天場景 (Daytime)：</span><span class="val">82.4 %</span></div>
+                                        <div class="info-item" style="display: flex; justify-content: space-between;"><span>夜間場景 (Night)：</span><span class="val" style="color: var(--neon-orange);">17.6 % (建議補充)</span></div>
+                                        <div class="info-item" style="display: flex; justify-content: space-between;"><span>雨天潮濕 (Wet/Rainy)：</span><span class="val">5.2 %</span></div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Tab: Scene & Source Distribution -->
-                        <div class="workspace-tab-content" data-tab-content="dist-scene" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>場景與來源分佈</h2>
-                                <p>分析影像在不同時間（白天/黑夜）、天氣（晴天/雨天）或硬體來源中的分佈情況，保證泛化能力。</p>
-                            </div>
-                            <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-mountain-sun"></i> 場景特徵分布摘要</div>
-                                <div class="info-list">
-                                    <div class="info-item" style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>白天場景 (Daytime)：</span><span class="val">82.4 %</span></div>
-                                    <div class="info-item" style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>夜間場景 (Night)：</span><span class="val" style="color: var(--neon-orange);">17.6 % (建議補充)</span></div>
-                                    <div class="info-item" style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>雨天潮濕 (Wet/Rainy)：</span><span class="val">5.2 %</span></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Leakage Check -->
-                        <div class="workspace-tab-content" data-tab-content="dist-leakage" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>資料洩漏檢查</h2>
-                                <p>檢查訓練集與驗證集/測試集之間是否有高度相似的圖片，這會導致驗證精度虛高。</p>
-                            </div>
+                            <!-- 資料洩漏檢查 -->
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
                                 <div class="section-title"><i class="fa-solid fa-shield-virus"></i> 資料防洩漏分析 (Data Leakage Checker)</div>
                                 <div class="guide-warning-item info" style="margin-top: 8px;">
                                     <i class="fa-solid fa-circle-check success-color"></i>
-                                    <span>智慧分析已驗證：Train / Val / Test 集合之間的影像特徵相似度 (Cosine Similarity) 均低於 0.88。<b>未發現洩漏風險！</b></span>
+                                    <span>智慧分析已驗證：Train / Val / Test 集合之間的影像特徵相似度均低於 0.88。<b>未發現洩漏風險！</b></span>
                                 </div>
                                 <button class="btn btn-secondary" style="margin-top: 12px; width: 100%;"><i class="fa-solid fa-fingerprint"></i> 執行特徵相似度碰撞比對</button>
                             </div>
-                        </div>
-
-                        <!-- Tab: Augmentation (資料增強，原 checkbox 內容移入) -->
-                        <div class="workspace-tab-content" data-tab-content="dist-aug" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>物理資料增強與擴充</h2>
-                                <p>在訓練時自動對影像進行隨機變形、調色、翻轉與雜訊處理，以大幅提升模型的魯棒性與泛化能力。</p>
-                            </div>
-                            <!-- 整合原有 styles 裡的資料增強開關 -->
+                            <!-- 物理資料增強與配置 -->
                             <div class="glass-panel" style="max-width: 700px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-wand-magic-sparkles"></i> 物理增強配置項目</div>
-                                <div class="switch-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 8px;">
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-flip" checked>
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>水平翻轉 (Horizontal Flip)</span>
+                                <div class="section-title"><i class="fa-solid fa-wand-magic-sparkles"></i> 資料增強配置與預設</div>
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">選擇預設增強方案，或點選「自定義」以配置細節參數與進階增強管道。</p>
+                                
+                                <!-- Preset 方案選擇按鈕組 -->
+                                <div class="preset-btn-group" style="display: flex; gap: 8px; margin-bottom: 16px;">
+                                    <button class="btn btn-secondary btn-sm active" data-preset="standard">Standard (標準)</button>
+                                    <button class="btn btn-secondary btn-sm" data-preset="none">None (無)</button>
+                                    <button class="btn btn-secondary btn-sm" data-preset="strong">Strong (強效)</button>
+                                    <button class="btn btn-secondary btn-sm" data-preset="custom">Custom (自定義)</button>
+                                </div>
+
+                                <!-- Preset 詳情面板 -->
+                                <div id="aug-preset-desc" class="preset-desc-panel" style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-glass); border-radius: 8px; font-size: 0.82rem; line-height: 1.6;">
+                                    <!-- JS 動態寫入 -->
+                                </div>
+
+                                <!-- 自定義增強配置項目 (選擇 Custom 時顯示) -->
+                                <div id="custom-aug-panel" style="display: none; margin-top: 12px; display: flex; flex-direction: column; gap: 16px;">
+                                    <!-- 1. 12 項物理增強開關 -->
+                                    <div>
+                                        <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; color: var(--text-primary);">1. 基礎物理增強開關：</div>
+                                        <div class="switch-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-flip" checked>
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>水平翻轉 (Horizontal Flip)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-vflip">
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>垂直翻轉 (Vertical Flip)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-rotate" checked>
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>隨機旋轉 (±10° Rotation)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-shear">
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>隨機剪切 (Shear)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-scale-crop" checked>
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>隨機縮放裁剪 (Scale & Crop)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-translate">
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>隨機平移 (Translation)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-brightness" checked>
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>亮度調整 (Brightness)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-contrast">
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>對比度調整 (Contrast)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-color-jitter">
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>色彩對比度 HSV (Color Jitter)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-blur">
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>高斯模糊 (Gaussian Blur)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-salt-pepper">
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>椒鹽雜訊 (Salt & Pepper Noise)</span>
+                                            </div>
+                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
+                                                <label class="switch">
+                                                    <input type="checkbox" id="aug-cutout">
+                                                    <span class="slider-switch"></span>
+                                                </label>
+                                                <span>隨機擦除 (Cutout / Random Erasing)</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-rotate" checked>
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>隨機旋轉 (±10° Rotation)</span>
-                                    </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-brightness" checked>
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>亮度調整 (0.8~1.2 Brightness)</span>
-                                    </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-blur">
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>高斯模糊 (Gaussian Blur)</span>
-                                    </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-vflip">
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>垂直翻轉 (Vertical Flip)</span>
-                                    </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-scale-crop">
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>隨機縮放裁剪 (Scale & Crop)</span>
-                                    </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-translate">
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>隨機平移 (Translation)</span>
-                                    </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-salt-pepper">
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>椒鹽雜訊 (Salt & Pepper Noise)</span>
-                                    </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-cutout">
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>隨機擦除 (Cutout / Random Erasing)</span>
-                                    </div>
-                                    <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                        <label class="switch">
-                                            <input type="checkbox" id="aug-grayscale">
-                                            <span class="slider-switch"></span>
-                                        </label>
-                                        <span>灰階化 (Grayscale)</span>
+                                    
+                                    <!-- 2. 進階自定義管道配置 -->
+                                    <div style="border-top: 1px solid var(--border-glass); padding-top: 12px;">
+                                        <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 6px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                            <span>2. 進階自定義增強管道 (Albumentations Pipeline)：</span>
+                                            <span class="val badge warning" style="font-size: 0.68rem; font-weight: normal; cursor: pointer;" title="點擊載入範例" id="btn-load-pipeline-example">載入範例</span>
+                                        </div>
+                                        <textarea id="txt-custom-pipeline" placeholder="請輸入 JSON 格式的 Albumentations Pipeline 配置..." style="width: 100%; height: 120px; font-family: monospace; font-size: 0.78rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass); border-radius: 6px; color: #fff; padding: 8px; resize: vertical;"></textarea>
+                                        <small class="help-text">您可以自訂參數傳入後端，將直接關聯至您的訓練配置管道。</small>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Tab: Export -->
+                        <!-- Tab: Export (資料集匯出) -->
                         <div class="workspace-tab-content" data-tab-content="dist-export" style="display: none;">
                             <div class="workspace-tab-header">
                                 <h2>資料集匯出</h2>
@@ -1047,14 +1063,103 @@
                                 <p style="font-size: 0.8rem; color: var(--text-secondary);">匯出後路徑將保存在：<b>exports/yolo_dataset_v001/</b> 內，並自動生成 `data.yaml`。</p>
                                 <div class="form-group" style="margin-top: 12px;">
                                     <label>匯出格式</label>
-                                    <select style="width: 100%;">
-                                        <option>YOLO Object Detection (Text Labels)</option>
-                                        <option>COCO JSON Format</option>
-                                        <option>PASCAL VOC XML Format</option>
+                                    <select style="width: 100%;" id="select-export-format">
+                                        <option value="yolo" selected>YOLO Object Detection (Text Labels)</option>
+                                        <option value="coco">COCO JSON Format</option>
+                                        <option value="voc">PASCAL VOC XML Format</option>
                                     </select>
                                 </div>
                                 <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
                                     <button class="btn btn-primary" id="btn-export-dataset"><i class="fa-solid fa-circle-arrow-down"></i> 一鍵匯出資料集 & 建立 data.yaml</button>
+                                </div>
+                            </div>
+
+                            <!-- 資料集格式結構視覺化面板 -->
+                            <div class="glass-panel" style="max-width: 700px; margin-top: 20px;">
+                                <div class="section-title" id="export-struct-title"><i class="fa-solid fa-folder-tree"></i> YOLO 資料集結構預覽 (Standard Folder Structure)</div>
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">點選下方樹狀目錄中的檔案，可在右側檢視檔案的模擬內容與格式說明。</p>
+                                
+                                <div class="yolo-struct-container" style="display: grid; grid-template-columns: 240px 1fr; gap: 16px; min-height: 260px; background: rgba(0,0,0,0.15); border: 1px solid var(--border-glass); border-radius: 8px; overflow: hidden;">
+                                    <!-- 左側：樹狀結構 -->
+                                    <div class="yolo-tree-column" style="padding: 16px; border-right: 1px solid var(--border-glass); user-select: none; font-size: 0.82rem; overflow-y: auto;">
+                                        
+                                        <!-- 1. YOLO Tree -->
+                                        <div id="tree-yolo" style="display: block;">
+                                            <div class="tree-root" style="font-weight: 700; color: #fff; margin-bottom: 8px;"><i class="fa-solid fa-folder-open" style="color: #f39c12; margin-right: 6px;"></i> yolo_dataset/</div>
+                                            <div class="tree-nodes" style="padding-left: 14px; display: flex; flex-direction: column; gap: 6px;">
+                                                <div class="tree-node file-node active" data-file="yolo-yaml" style="cursor: pointer; color: #3498db; transition: transform 0.2s; padding: 4px 8px; border-radius: 4px; background: rgba(52, 152, 219, 0.15);"><i class="fa-solid fa-file-code" style="margin-right: 6px;"></i> data.yaml</div>
+                                                
+                                                <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> train/</div>
+                                                <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                    <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> images/</div>
+                                                    <div style="padding-left: 14px;"><div class="tree-node file-node" data-file="yolo-img1" style="cursor: pointer; color: #9b59b6; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-image" style="margin-right: 6px;"></i> 000001.jpg</div></div>
+                                                    <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> labels/</div>
+                                                    <div style="padding-left: 14px;"><div class="tree-node file-node" data-file="yolo-txt1" style="cursor: pointer; color: #2ecc71; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i> 000001.txt</div></div>
+                                                </div>
+
+                                                <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> val/</div>
+                                                <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                    <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> images/</div>
+                                                    <div style="padding-left: 14px;"><div class="tree-node file-node" data-file="yolo-img2" style="cursor: pointer; color: #9b59b6; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-image" style="margin-right: 6px;"></i> 000002.jpg</div></div>
+                                                    <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> labels/</div>
+                                                    <div style="padding-left: 14px;"><div class="tree-node file-node" data-file="yolo-txt2" style="cursor: pointer; color: #2ecc71; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i> 000002.txt</div></div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 2. COCO Tree -->
+                                        <div id="tree-coco" style="display: none;">
+                                            <div class="tree-root" style="font-weight: 700; color: #fff; margin-bottom: 8px;"><i class="fa-solid fa-folder-open" style="color: #f39c12; margin-right: 6px;"></i> coco_dataset/</div>
+                                            <div class="tree-nodes" style="padding-left: 14px; display: flex; flex-direction: column; gap: 6px;">
+                                                <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> annotations/</div>
+                                                <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                    <div class="tree-node file-node" data-file="coco-json" style="cursor: pointer; color: #3498db; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-file-code" style="margin-right: 6px;"></i> instances_train.json</div>
+                                                </div>
+                                                <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> train/</div>
+                                                <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                    <div class="tree-node file-node" data-file="coco-img1" style="cursor: pointer; color: #9b59b6; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-image" style="margin-right: 6px;"></i> 000001.jpg</div>
+                                                </div>
+                                                <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> val/</div>
+                                                <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                    <div class="tree-node file-node" data-file="coco-img2" style="cursor: pointer; color: #9b59b6; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-image" style="margin-right: 6px;"></i> 000002.jpg</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 3. PASCAL VOC Tree -->
+                                        <div id="tree-voc" style="display: none;">
+                                            <div class="tree-root" style="font-weight: 700; color: #fff; margin-bottom: 8px;"><i class="fa-solid fa-folder-open" style="color: #f39c12; margin-right: 6px;"></i> voc_dataset/</div>
+                                            <div class="tree-nodes" style="padding-left: 14px; display: flex; flex-direction: column; gap: 6px;">
+                                                <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> Annotations/</div>
+                                                <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                    <div class="tree-node file-node" data-file="voc-xml1" style="cursor: pointer; color: #3498db; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-file-code" style="margin-right: 6px;"></i> 000001.xml</div>
+                                                    <div class="tree-node file-node" data-file="voc-xml2" style="cursor: pointer; color: #3498db; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-file-code" style="margin-right: 6px;"></i> 000002.xml</div>
+                                                </div>
+                                                <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> JPEGImages/</div>
+                                                <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                    <div class="tree-node file-node" data-file="voc-img1" style="cursor: pointer; color: #9b59b6; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-image" style="margin-right: 6px;"></i> 000001.jpg</div>
+                                                    <div class="tree-node file-node" data-file="voc-img2" style="cursor: pointer; color: #9b59b6; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-image" style="margin-right: 6px;"></i> 000002.jpg</div>
+                                                </div>
+                                                <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> ImageSets/</div>
+                                                <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                    <div class="tree-node folder-node" style="color: var(--text-secondary); padding: 2px 8px;"><i class="fa-solid fa-folder" style="color: #f39c12; margin-right: 6px;"></i> Main/</div>
+                                                    <div style="padding-left: 14px; display: flex; flex-direction: column; gap: 4px;">
+                                                        <div class="tree-node file-node" data-file="voc-txt" style="cursor: pointer; color: #2ecc71; padding: 4px 8px; border-radius: 4px;"><i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i> train.txt</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                    
+                                    <!-- 右側：模擬檔案檢視 -->
+                                    <div class="yolo-viewer-column" style="padding: 16px; background: rgba(0,0,0,0.3); font-family: monospace; font-size: 0.8rem; overflow-y: auto;">
+                                        <div style="color: var(--text-secondary); border-bottom: 1px solid var(--border-glass); padding-bottom: 6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                            <span id="yolo-viewer-title" style="font-weight: 600; color: #fff;">📄 data.yaml</span>
+                                            <span style="color: var(--neon-blue); font-size: 0.72rem; padding: 2px 6px; border: 1px solid var(--neon-blue); border-radius: 4px;">模擬內容</span>
+                                        </div>
+                                        <pre id="yolo-viewer-body" style="margin: 0; white-space: pre-wrap; line-height: 1.5; color: #e0e0e0; font-family: 'Courier New', Courier, monospace;"></pre>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1100,10 +1205,6 @@
                 </div>
             </section>
 
-
-            <!-- ==========================================
-                 4. 模型訓練工作區 (Model Training View, 整合原 train-view, transform-view, inference-view)
-                 ========================================== -->
             <section class="app-view workspace-view" id="training-workflow-view">
                 <div class="workspace-layout">
                     <!-- 左側 Sidebar -->
@@ -1113,15 +1214,9 @@
                             <span>模型訓練中心</span>
                         </div>
                         <ul class="sidebar-menu">
-                            <li class="menu-item active" data-tab="train-config"><i class="fa-solid fa-sliders"></i> 訓練超參配置 (Config)</li>
-                            <li class="menu-item" data-tab="train-execute"><i class="fa-solid fa-play"></i> 啟動訓練任務 (Train Run)</li>
-                            <li class="menu-item" data-tab="train-monitor"><i class="fa-solid fa-chart-line"></i> 即時曲線監控 (Monitor)</li>
-                            <li class="menu-item" data-tab="train-metrics"><i class="fa-solid fa-award"></i> 綜合評估指標 (Metrics)</li>
-                            <li class="menu-item" data-tab="train-error"><i class="fa-solid fa-bug"></i> 預測錯誤分析 (Error)</li>
-                            <li class="menu-item" data-tab="train-inference"><i class="fa-solid fa-eye"></i> 即時推論測試 (Inference)</li>
-                            <li class="menu-item" data-tab="train-export"><i class="fa-solid fa-arrows-spin"></i> 模型優化導出 (Export)</li>
-                            <li class="menu-item" data-tab="train-registry"><i class="fa-solid fa-box-archive"></i> 模型倉庫管理 (Registry)</li>
-                            <li class="menu-item" data-tab="train-report"><i class="fa-solid fa-file-invoice"></i> 輸出開發報告 (Report)</li>
+                            <li class="menu-item active" data-tab="train-config"><i class="fa-solid fa-sliders"></i> 訓練配置與監控 (Train & Monitor)</li>
+                            <li class="menu-item" data-tab="train-metrics"><i class="fa-solid fa-chart-line"></i> 評估指標與分析 (Evaluation & Analysis)</li>
+                            <li class="menu-item" data-tab="train-inference"><i class="fa-solid fa-rocket"></i> 推論測試與部署 (Inference & Deploy)</li>
                         </ul>
                         <div class="sidebar-footer">
                             <button class="btn btn-secondary btn-back-home" style="width: 100%;"><i class="fa-solid fa-arrow-left"></i> 返回首頁</button>
@@ -1130,257 +1225,214 @@
 
                     <!-- 中間 Main Workspace -->
                     <div class="workspace-main">
-                        <!-- Tab: Config (訓練設定項目，移自原有頁面) -->
+                        <!-- Tab: Config (訓練設定與監控合併，整合原 train-config, train-execute, train-monitor) -->
                         <div class="workspace-tab-content" data-tab-content="train-config" style="display: block;">
                             <div class="workspace-tab-header">
-                                <h2>模型與訓練參數配置</h2>
-                                <p>選擇 SOTA 卷積神經網路或 YOLO 模型架構，並配置訓練 Epochs、Batch Size 等超參數。</p>
+                                <h2>模型訓練配置與實時監控</h2>
+                                <p>在這裡配置模型超參數，一鍵啟動訓練，並實時監控 Loss/Accuracy 曲線與背景日誌。</p>
                             </div>
-                            <div class="glass-panel" style="max-width: 720px; margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-gears"></i> 核心模型與參數設定</div>
+
+                            <!-- 雙欄 Layout -->
+                            <div style="display: grid; grid-template-columns: 320px 1fr; gap: 16px; margin-top: 16px;">
                                 
-                                <div class="form-group">
-                                    <label for="train-model" class="label-with-tip">選擇模型結構 (Model)
-                                        <span class="tip-icon" data-tooltip="• YOLOv8-cls：Ultralytics 官方分類模型，推論速度極快&#10;• ResNet18：殘差網路，通用且穩定，適合中小型資料集&#10;• MobileNetV3：為行動裝置設計，模型體積小&#10;• EfficientNet-B0：複合縮放架構，精確度最高但訓練較慢"><i class="fa-solid fa-circle-question"></i></span>
-                                    </label>
-                                    <select id="train-model" style="width: 100%;">
-                                        <option value="yolov8-cls">YOLOv8-cls (高速影像分類)</option>
-                                        <option value="resnet18" selected>ResNet18 (通用、平衡結構)</option>
-                                        <option value="mobilenetv3">MobileNetV3 (輕量化、嵌入式設備)</option>
-                                        <option value="efficientnet">EfficientNet-B0 (高精確度)</option>
-                                    </select>
-                                </div>
+                                <!-- 左側：參數配置與控制區 -->
+                                <div style="display: flex; flex-direction: column; gap: 16px;">
+                                    
+                                    <!-- 參數設定卡片 -->
+                                    <div class="glass-panel" style="margin: 0; padding: 16px;">
+                                        <div class="section-title"><i class="fa-solid fa-sliders"></i> 參數配置</div>
+                                        
+                                        <div class="form-group" style="margin-top: 8px;">
+                                            <label for="train-model" class="label-with-tip">選擇模型結構 (Model)
+                                                <span class="tip-icon" data-tooltip="• YOLOv8-cls：Ultralytics 官方分類模型，推論速度極快&#10;• ResNet18：殘差網路，通用且穩定，適合中小型資料集&#10;• MobileNetV3：為行動裝置設計，模型體積小&#10;• EfficientNet-B0：複合縮放架構，精確度最高但訓練較慢"><i class="fa-solid fa-circle-question"></i></span>
+                                            </label>
+                                            <select id="train-model" style="width: 100%;">
+                                                <option value="yolov8-cls">YOLOv8-cls (高速影像分類)</option>
+                                                <option value="resnet18" selected>ResNet18 (通用、平衡結構)</option>
+                                                <option value="mobilenetv3">MobileNetV3 (輕量化、嵌入式設備)</option>
+                                                <option value="efficientnet">EfficientNet-B0 (高精確度)</option>
+                                            </select>
+                                        </div>
 
-                                <div class="grid-2-col" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-                                    <div class="form-group">
-                                        <label for="train-img-size" class="label-with-tip">輸入解析度 (Image Size)
-                                            <span class="tip-icon" data-tooltip="• 決定送入模型的圖片長寬像素&#10;• 224：標準分類尺寸，訓練快速&#10;• 640：物件偵測常用，精度高但消耗更多 GPU 記憶體"><i class="fa-solid fa-circle-question"></i></span>
-                                        </label>
-                                        <select id="train-img-size">
-                                            <option value="224" selected>224 x 224</option>
-                                            <option value="320">320 x 320</option>
-                                            <option value="416">416 x 416</option>
-                                            <option value="640">640 x 640</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="train-epochs" class="label-with-tip">訓練輪數 (Epochs)
-                                            <span class="tip-icon" data-tooltip="• 模型遍歷整個訓練集的次數&#10;• 數值越大，模型學習越充分，但可能過擬合&#10;• 建議範圍：小型資料 30~80，大型資料 100~300"><i class="fa-solid fa-circle-question"></i></span>
-                                        </label>
-                                        <input type="number" id="train-epochs" min="5" max="500" value="50">
-                                    </div>
-                                </div>
-
-                                <div class="grid-2-col" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-                                    <div class="form-group">
-                                        <label for="train-batch" class="label-with-tip">批次大小 (Batch Size)
-                                            <span class="tip-icon" data-tooltip="• 每次送入 GPU 的圖片數量&#10;• Auto：由系統自動偵測可用記憶體分配&#10;• 數值越大訓練越快，但需要更多 VRAM&#10;• GPU 記憶體不足時請降低此值"><i class="fa-solid fa-circle-question"></i></span>
-                                        </label>
-                                        <select id="train-batch">
-                                            <option value="-1">Auto (智慧分配)</option>
-                                            <option value="8">8</option>
-                                            <option value="16" selected>16</option>
-                                            <option value="32">32</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="train-device" class="label-with-tip">硬體設備 (Device)
-                                            <span class="tip-icon" data-tooltip="• Auto：優先使用 NVIDIA GPU (CUDA)，無 GPU 時自動回退至 CPU&#10;• GPU (CUDA)：強制使用 NVIDIA 顯示卡加速&#10;• CPU：僅使用處理器，速度較慢但無硬體限制"><i class="fa-solid fa-circle-question"></i></span>
-                                        </label>
-                                        <select id="train-device">
-                                            <option value="auto" selected>Auto (優先 CUDA)</option>
-                                            <option value="cuda">GPU (CUDA)</option>
-                                            <option value="cpu">CPU (本機處理器)</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="grid-2-col" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-                                    <div class="form-group">
-                                        <label for="train-optimizer" class="label-with-tip">優化器 (Optimizer)
-                                            <span class="tip-icon" data-tooltip="• AdamW：自適應學習率 + 權重衰減，大多數情境推薦&#10;• Adam：自適應學習率，收斂快但易過擬合&#10;• SGD：隨機梯度下降，需搭配 Scheduler，收斂穩定"><i class="fa-solid fa-circle-question"></i></span>
-                                        </label>
-                                        <select id="train-optimizer">
-                                            <option value="AdamW" selected>AdamW (自適應與正則化)</option>
-                                            <option value="Adam">Adam</option>
-                                            <option value="SGD">SGD (隨機梯度下降)</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="train-lr" class="label-with-tip">學習率 (Learning Rate)
-                                            <span class="tip-icon" data-tooltip="• 控制模型每次更新權重的步長大小&#10;• Auto：由排程器自動調整&#10;• 0.001：大多數情境下的安全起點&#10;• 過大會導致訓練發散，過小會導致收斂過慢"><i class="fa-solid fa-circle-question"></i></span>
-                                        </label>
-                                        <select id="train-lr">
-                                            <option value="-1">Auto (自動調整)</option>
-                                            <option value="0.01">0.01</option>
-                                            <option value="0.001" selected>0.001 (推薦)</option>
-                                            <option value="0.0001">0.0001</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <!-- 進階收合設定 -->
-                                <details class="advanced-details" style="margin-top: 10px;">
-                                    <summary class="advanced-summary">進階訓練參數設定 (Advanced Settings)</summary>
-                                    <div class="advanced-panel-content" style="padding-top: 10px; display: flex; flex-direction: column; gap: 10px;">
-                                        <div class="grid-2-col" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-                                            <div class="form-group">
-                                                <label for="adv-weight-decay" class="label-with-tip">Weight Decay (正則化係數)
-                                                    <span class="tip-icon" data-tooltip="• L2 正則化係數，防止模型過擬合&#10;• 數值越大懲罰越強，常見值為 0.0005&#10;• 設為 0 則不使用正則化"><i class="fa-solid fa-circle-question"></i></span>
-                                                </label>
-                                                <input type="number" id="adv-weight-decay" step="0.0001" value="0.0005">
+                                        <div class="grid-2-col" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 8px;">
+                                            <div class="form-group" style="margin: 0;">
+                                                <label for="train-img-size" style="font-size: 0.72rem;">輸入解析度</label>
+                                                <select id="train-img-size" style="padding: 4px; font-size: 0.75rem;">
+                                                    <option value="224" selected>224 x 224</option>
+                                                    <option value="320">320 x 320</option>
+                                                    <option value="416">416 x 416</option>
+                                                    <option value="640">640 x 640</option>
+                                                </select>
                                             </div>
-                                            <div class="form-group">
-                                                <label for="adv-patience" class="label-with-tip">Early Stopping 耐心值 (Patience)
-                                                    <span class="tip-icon" data-tooltip="• 連續多少個 Epoch 驗證集無改善時自動停止&#10;• 防止模型在過擬合後繼續浪費算力&#10;• 建議值：10~30"><i class="fa-solid fa-circle-question"></i></span>
-                                                </label>
-                                                <input type="number" id="adv-patience" value="20">
+                                            <div class="form-group" style="margin: 0;">
+                                                <label for="train-epochs" style="font-size: 0.72rem;">訓練輪數</label>
+                                                <input type="number" id="train-epochs" min="5" max="500" value="50" style="padding: 4px; font-size: 0.75rem;">
                                             </div>
                                         </div>
-                                        <div class="switch-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                                <label class="switch">
-                                                    <input type="checkbox" id="adv-amp" checked>
-                                                    <span class="slider-switch"></span>
-                                                </label>
-                                                <span>混合精度訓練 (AMP / FP16)</span>
+
+                                        <div class="grid-2-col" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 8px;">
+                                            <div class="form-group" style="margin: 0;">
+                                                <label for="train-batch" style="font-size: 0.72rem;">批次大小</label>
+                                                <select id="train-batch" style="padding: 4px; font-size: 0.75rem;">
+                                                    <option value="-1">Auto (智慧)</option>
+                                                    <option value="8">8</option>
+                                                    <option value="16" selected>16</option>
+                                                    <option value="32">32</option>
+                                                </select>
                                             </div>
-                                            <div class="switch-item" style="display: flex; align-items: center; gap: 8px;">
-                                                <label class="switch">
-                                                    <input type="checkbox" id="adv-early-stop" checked>
-                                                    <span class="slider-switch"></span>
-                                                </label>
-                                                <span>自動提早結束 (Early Stopping)</span>
+                                            <div class="form-group" style="margin: 0;">
+                                                <label for="train-device" style="font-size: 0.72rem;">硬體設備</label>
+                                                <select id="train-device" style="padding: 4px; font-size: 0.75rem;">
+                                                    <option value="auto" selected>Auto</option>
+                                                    <option value="cuda">GPU (CUDA)</option>
+                                                    <option value="cpu">CPU</option>
+                                                </select>
                                             </div>
                                         </div>
-                                    </div>
-                                </details>
 
-                                <div class="action-row" style="margin-top: 20px; justify-content: flex-end;">
-                                    <button class="btn btn-secondary" id="btn-pre-check"><i class="fa-solid fa-list-check"></i> 檢查訓練資料</button>
-                                    <button class="btn btn-primary" id="btn-goto-run-tab"><i class="fa-solid fa-circle-arrow-right"></i> 下一步：啟動訓練</button>
+                                        <div class="grid-2-col" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 8px;">
+                                            <div class="form-group" style="margin: 0;">
+                                                <label for="train-optimizer" style="font-size: 0.72rem;">優化器</label>
+                                                <select id="train-optimizer" style="padding: 4px; font-size: 0.75rem;">
+                                                    <option value="AdamW" selected>AdamW</option>
+                                                    <option value="Adam">Adam</option>
+                                                    <option value="SGD">SGD</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group" style="margin: 0;">
+                                                <label for="train-lr" style="font-size: 0.72rem;">學習率</label>
+                                                <select id="train-lr" style="padding: 4px; font-size: 0.75rem;">
+                                                    <option value="-1">Auto</option>
+                                                    <option value="0.01">0.01</option>
+                                                    <option value="0.001" selected>0.001</option>
+                                                    <option value="0.0001">0.0001</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <!-- 進階收合設定 -->
+                                        <details class="advanced-details" style="margin-top: 12px;">
+                                            <summary class="advanced-summary" style="font-size: 0.75rem;">進階設定 (Advanced)</summary>
+                                            <div class="advanced-panel-content" style="padding-top: 8px; display: flex; flex-direction: column; gap: 8px;">
+                                                <div class="grid-2-col" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                                                    <div class="form-group" style="margin: 0;">
+                                                        <label for="adv-weight-decay" style="font-size: 0.68rem;">L2 正則化</label>
+                                                        <input type="number" id="adv-weight-decay" step="0.0001" value="0.0005" style="padding: 2px 4px; font-size: 0.7rem;">
+                                                    </div>
+                                                    <div class="form-group" style="margin: 0;">
+                                                        <label for="adv-patience" style="font-size: 0.68rem;">EarlyStop 耐心值</label>
+                                                        <input type="number" id="adv-patience" value="20" style="padding: 2px 4px; font-size: 0.7rem;">
+                                                    </div>
+                                                </div>
+                                                <div class="switch-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 4px;">
+                                                    <div class="switch-item" style="display: flex; align-items: center; gap: 4px; font-size: 0.68rem;">
+                                                        <label class="switch">
+                                                            <input type="checkbox" id="adv-amp" checked>
+                                                            <span class="slider-switch"></span>
+                                                        </label>
+                                                        <span>混合精度 (AMP)</span>
+                                                    </div>
+                                                    <div class="switch-item" style="display: flex; align-items: center; gap: 4px; font-size: 0.68rem;">
+                                                        <label class="switch">
+                                                            <input type="checkbox" id="adv-early-stop" checked>
+                                                            <span class="slider-switch"></span>
+                                                        </label>
+                                                        <span>早停機制</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </details>
+                                    </div>
+
+                                    <!-- 控制與進度條卡片 -->
+                                    <div class="glass-panel" style="margin: 0; padding: 16px;">
+                                        <div class="section-title"><i class="fa-solid fa-play"></i> 訓練控制與進度</div>
+                                        
+                                        <!-- 控制按鈕 -->
+                                        <div class="train-controls" style="display: flex; gap: 8px; margin-top: 10px;">
+                                            <button class="btn btn-primary btn-sm" id="btn-start-train" style="flex: 1; justify-content: center;"><i class="fa-solid fa-play"></i> 啟動訓練</button>
+                                            <button class="btn btn-danger btn-sm" id="btn-stop-train" style="flex: 1; justify-content: center; display: none;"><i class="fa-solid fa-circle-stop"></i> 停止訓練</button>
+                                            <button class="btn btn-secondary btn-sm" id="btn-pre-check" title="檢查資料健康度"><i class="fa-solid fa-list-check"></i> 預檢</button>
+                                        </div>
+
+                                        <!-- 進度條 -->
+                                        <div id="train-progress-section" style="margin-top: 16px; display: none;">
+                                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 6px;">
+                                                <span>Epoch: <b id="epoch-nums">- / -</b></span>
+                                                <span id="bottom-progress-pct" style="color: var(--neon-blue);">0%</span>
+                                            </div>
+                                            <div class="progress-bar-container" style="height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden;">
+                                                <div class="progress-bar-fill neon-glow" id="bottom-progress-bar" style="width: 0%; height: 100%; background: var(--neon-blue); transition: width 0.3s;"></div>
+                                            </div>
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 0.72rem; color: var(--text-secondary);">
+                                                <div>Loss: <b id="lbl-train-loss" class="accent-color">0.0000</b></div>
+                                                <div>Val Loss: <b id="lbl-val-loss" class="secondary-color">0.0000</b></div>
+                                                <div>Acc: <b id="lbl-accuracy" class="success-color">0.00%</b></div>
+                                                <div>Best Acc: <b id="lbl-best-accuracy" class="gold-color">0.00%</b></div>
+                                            </div>
+                                            <div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px; display: flex; justify-content: space-between;">
+                                                <div>已用: <span id="lbl-elapsed">-</span></div>
+                                                <div>剩餘: <span id="lbl-remaining">-</span></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 訓練未開始時的提示 -->
+                                        <div id="train-idle-hint" style="text-align: center; padding: 12px; color: var(--text-secondary); font-size: 0.78rem;">
+                                            <i class="fa-solid fa-info-circle" style="margin-right: 4px; color: var(--neon-blue);"></i> 點擊「啟動訓練」開始背景訓練。
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 右側：監控區 (曲線 + 日誌) -->
+                                <div style="display: flex; flex-direction: column; gap: 16px;">
+                                    
+                                    <!-- 即時曲線監控 (Monitor) -->
+                                    <div class="glass-panel chart-panel" style="margin: 0; padding: 16px;">
+                                        <div class="section-title-row" style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                                            <div class="section-title"><i class="fa-solid fa-chart-line"></i> 精度/損失實時曲線 (Loss & Accuracy)</div>
+                                            <div class="chart-legend" style="display: flex; gap: 12px; font-size: 0.75rem;">
+                                                <span class="legend-item"><span class="line train" style="width: 10px; height: 3px; background: var(--neon-blue); display: inline-block; vertical-align: middle;"></span> Train Loss</span>
+                                                <span class="legend-item"><span class="line val" style="width: 10px; height: 3px; background: var(--neon-purple); display: inline-block; vertical-align: middle;"></span> Val Loss</span>
+                                                <span class="legend-item"><span class="line acc" style="width: 10px; height: 3px; background: var(--neon-green); display: inline-block; vertical-align: middle;"></span> Accuracy</span>
+                                            </div>
+                                        </div>
+                                        <div class="chart-container-div" style="position: relative; height: 210px; background: rgba(0,0,0,0.15); border-radius: 8px; padding: 6px;">
+                                            <canvas id="train-curve-canvas" style="width: 100%; height: 100%;"></canvas>
+                                        </div>
+                                    </div>
+
+                                    <!-- 日誌終端機 -->
+                                    <div class="glass-panel console-panel" style="margin: 0; padding: 16px; display: flex; flex-direction: column; height: 250px; min-height: 0;">
+                                        <div class="section-title" style="padding-bottom: 6px;"><i class="fa-solid fa-terminal"></i> 訓練日誌輸出 (Train Logs)</div>
+                                        <div class="console-box" id="train-logs-console" style="flex-grow: 1; overflow-y: auto; background: #020206; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 0.72rem; line-height: 1.4; color: #a0c0a0;">
+                                            <div class="log-line system">Ready to start. Waiting for input...</div>
+                                        </div>
+                                    </div>
+
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Tab: Train Run (啟動與背景控制，整合原 train-view 底部內容) -->
-                        <div class="workspace-tab-content" data-tab-content="train-execute" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>啟動與執行監控</h2>
-                                <p>啟動本機 PyTorch 後端背景訓練執行緒，並即時查看進度指標與剩餘時間。</p>
-                            </div>
-                            
-                            <!-- 訓練非進行中時的準備按鈕 -->
-                            <div class="glass-panel" id="train-start-panel" style="max-width: 600px; margin-top: 16px; text-align: center; padding: 40px 20px;">
-                                <i class="fa-solid fa-circle-play neon-text" style="font-size: 3.5rem; margin-bottom: 16px;"></i>
-                                <h3>準備就緒，可啟動訓練</h3>
-                                <p style="color: var(--text-secondary); margin-bottom: 24px;">系統將在背景拉起 Python YOLO 訓練線程。建議在訓練前執行一次健康度檢查。</p>
-                                <button class="btn btn-primary btn-lg" id="btn-start-train" style="padding: 14px 28px; font-size: 1rem;"><i class="fa-solid fa-play"></i> 立即啟動本機模型訓練</button>
-                            </div>
-
-                            <!-- 訓練進行中與結果即時監控 -->
-                            <div class="training-dashboard" id="training-dashboard-area" style="display: none; margin-top: 16px;">
-                                <div class="grid-layout train-dashboard-grid" style="grid-template-columns: 280px 1fr; gap: 16px;">
-                                    <!-- 左側：即時狀態 -->
-                                    <div class="glass-panel dashboard-stat-panel" style="padding: 16px; gap: 12px;">
-                                        <div class="section-title" style="font-size: 0.95rem; padding-bottom: 6px;"><i class="fa-solid fa-gauge-high"></i> 訓練即時狀態</div>
-                                        <div class="epoch-progress-container" style="display: flex; flex-direction: column; align-items: center; margin: 10px 0;">
-                                            <div class="circular-progress" id="epoch-progress-circle" style="width: 90px; height: 90px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: radial-gradient(closest-side, #0a0a12 85%, transparent 86%), conic-gradient(var(--neon-blue) 0%, rgba(255,255,255,0.05) 0%);">
-                                                <div class="value-container" id="epoch-progress-text" style="font-size: 1.2rem; font-weight: 800;">0%</div>
-                                            </div>
-                                            <div class="progress-info-title" style="font-size: 0.8rem; margin-top: 8px;">Epochs: <span id="epoch-nums">- / -</span></div>
-                                        </div>
-                                        <div class="live-metrics" style="font-size: 0.78rem; display: flex; flex-direction: column; gap: 6px;">
-                                            <div class="metric-row" style="display: flex; justify-content: space-between;"><span>Train Loss</span><span class="val accent-color" id="lbl-train-loss">0.0000</span></div>
-                                            <div class="metric-row" style="display: flex; justify-content: space-between;"><span>Val Loss</span><span class="val secondary-color" id="lbl-val-loss">0.0000</span></div>
-                                            <div class="metric-row" style="display: flex; justify-content: space-between;"><span>Accuracy</span><span class="val success-color" id="lbl-accuracy">0.00%</span></div>
-                                            <div class="metric-row" style="display: flex; justify-content: space-between;"><span>最佳 Accuracy</span><span class="val gold-color" id="lbl-best-accuracy">0.00%</span></div>
-                                        </div>
-                                        <div class="time-metrics" style="font-size: 0.75rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px; margin-top: 6px;">
-                                            <div><i class="fa-regular fa-clock"></i> 已用時間: <span id="lbl-elapsed">-</span></div>
-                                            <div><i class="fa-solid fa-hourglass-half"></i> 剩餘時間: <span id="lbl-remaining">-</span></div>
-                                        </div>
-                                        <div class="action-row" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-                                            <button class="btn btn-danger btn-sm" id="btn-stop-train" style="width: 100%;"><i class="fa-solid fa-circle-stop"></i> 停止訓練</button>
-                                            <button class="btn btn-secondary btn-sm" id="btn-open-runs-folder" style="width: 100%;"><i class="fa-regular fa-folder-open"></i> 結果資料夾</button>
-                                        </div>
-                                    </div>
-                                    <!-- 右側：日誌終端機 -->
-                                    <div class="glass-panel console-panel" style="padding: 16px; display: flex; flex-direction: column; overflow: hidden; height: 360px;">
-                                        <div class="section-title" style="font-size: 0.95rem; padding-bottom: 6px;"><i class="fa-solid fa-terminal"></i> 訓練日誌輸出 (Train Logs)</div>
-                                        <div class="console-box" id="train-logs-console" style="flex-grow: 1; overflow-y: auto; background: #020206; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.75rem; line-height: 1.4; color: #a0c0a0;">
-                                            <div class="log-line system">Ready to start. Waiting for GPU handshake...</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <!-- 底端總進度條與 ETA -->
-                                <div class="glass-panel train-bottom-progress" id="train-bottom-progress" style="margin-top: 12px; padding: 12px;">
-                                    <div class="bottom-progress-header" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 6px;">
-                                        <span><i class="fa-solid fa-bars-progress"></i> 訓練總進度</span>
-                                        <span id="bottom-progress-pct">0%</span>
-                                    </div>
-                                    <div class="progress-bar-container" style="height: 6px;">
-                                        <div class="progress-bar-fill neon-glow" id="bottom-progress-bar" style="width: 0%;"></div>
-                                    </div>
-                                    <div class="bottom-progress-meta" style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-top: 6px;">
-                                        <span>已用: <b id="bottom-elapsed">--:--</b></span>
-                                        <span>剩餘: <b id="bottom-remaining">--:--</b></span>
-                                        <span>預計完成: <b id="bottom-eta">--:--:--</b></span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Monitor (訓練曲線監控) -->
-                        <div class="workspace-tab-content" data-tab-content="train-monitor" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>訓練曲線實時監控</h2>
-                                <p>監測 Train Loss 與 Val Loss 的收斂趨勢，以及 Accuracy 精度增長曲線。</p>
-                            </div>
-                            <div class="glass-panel chart-panel" style="margin-top: 16px;">
-                                <div class="section-title-row" style="margin-bottom: 12px;">
-                                    <div class="section-title"><i class="fa-solid fa-chart-line"></i> 精度/損失曲線對照 (Loss / Accuracy)</div>
-                                    <div class="chart-legend" style="display: flex; gap: 12px; font-size: 0.78rem;">
-                                        <span class="legend-item" style="display: flex; align-items: center; gap: 4px;"><span class="line train" style="width: 12px; height: 3px; background: var(--neon-blue); display: inline-block;"></span> Train Loss</span>
-                                        <span class="legend-item" style="display: flex; align-items: center; gap: 4px;"><span class="line val" style="width: 12px; height: 3px; background: var(--neon-purple); display: inline-block;"></span> Val Loss</span>
-                                        <span class="legend-item" style="display: flex; align-items: center; gap: 4px;"><span class="line acc" style="width: 12px; height: 3px; background: var(--neon-green); display: inline-block;"></span> Accuracy</span>
-                                    </div>
-                                </div>
-                                <div class="chart-container-div" style="position: relative; height: 320px; background: rgba(0,0,0,0.15); border-radius: 12px; padding: 10px;">
-                                    <canvas id="train-curve-canvas" style="width: 100%; height: 100%;"></canvas>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Metrics (綜合評估指標，混淆矩陣) -->
+                        <!-- Tab: Evaluation (模型評估與錯誤分析，整合原 train-metrics, train-error) -->
                         <div class="workspace-tab-content" data-tab-content="train-metrics" style="display: none;">
                             <div class="workspace-tab-header">
                                 <h2>模型評估與指標分析</h2>
-                                <p>模型訓練完成後，在此查看 Accuracy、Precision、Recall 指標及混淆矩陣熱力圖。</p>
+                                <p>評估訓練完成後模型的分類精度、混淆矩陣，並對驗證集中的錯誤預測樣本進行分析。</p>
                             </div>
                             
-                            <div class="train-results-section" id="train-results-area" style="margin-top: 16px; display: block;">
-                                <div class="results-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
-                                    <!-- 混淆矩陣 -->
-                                    <div class="glass-panel results-card" style="padding: 16px;">
-                                        <h3 style="font-size: 0.95rem; margin-bottom: 10px;"><i class="fa-solid fa-table-cells"></i> 混淆矩陣 (Confusion Matrix)</h3>
-                                        <div class="matrix-container" id="confusion-matrix-display" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px; min-height: 160px; font-size: 0.8rem; text-align: center; align-content: center;">
-                                            <!-- 用 CSS Grid 繪製漂亮的熱力矩陣 -->
-                                            <div style="color: var(--text-muted); grid-column: span 4;">等待模型訓練完成以載入矩陣</div>
-                                        </div>
-                                    </div>
-
-                                    <!-- 指標儀表板 -->
-                                    <div class="glass-panel results-card" style="padding: 16px;">
-                                        <h3 style="font-size: 0.95rem; margin-bottom: 10px;"><i class="fa-solid fa-award"></i> 綜合評估指標</h3>
-                                        <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; justify-items: center; margin-top: 20px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+                                <!-- 左側：評估指標與混淆矩陣 -->
+                                <div style="display: flex; flex-direction: column; gap: 16px;">
+                                    <div class="glass-panel" style="margin: 0; padding: 16px;">
+                                        <div class="section-title"><i class="fa-solid fa-award"></i> 綜合評估指標</div>
+                                        <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; justify-items: center; margin-top: 16px;">
                                             <div class="metric-circle-card" style="display: flex; flex-direction: column; align-items: center;">
                                                 <div class="progress-ring-container" style="position: relative; width: 80px; height: 80px;">
                                                     <svg class="progress-ring" width="80" height="80">
                                                         <circle class="progress-ring-bg" stroke="#2a2a3e" stroke-width="5" fill="transparent" r="34" cx="40" cy="40" />
-                                                        <circle class="progress-ring-bar" id="ring-accuracy" stroke="var(--neon-green)" stroke-width="5" stroke-linecap="round" fill="transparent" r="34" cx="40" cy="40" stroke-dasharray="213.6" stroke-dashoffset="0" />
+                                                        <circle class="progress-ring-bar" id="ring-accuracy" stroke="var(--neon-green)" stroke-width="5" stroke-linecap="round" fill="transparent" r="34" cx="40" cy="40" stroke-dasharray="213.6" stroke-dashoffset="213.6" />
                                                     </svg>
-                                                    <span class="ring-val" id="lbl-res-accuracy" style="font-size: 1.1rem; font-weight: 700; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">94.2%</span>
+                                                    <span class="ring-val" id="lbl-res-accuracy" style="font-size: 1.1rem; font-weight: 700; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">0.0%</span>
                                                 </div>
                                                 <span style="font-size: 0.72rem; color: var(--text-muted); margin-top: 6px;">精確度 (Accuracy)</span>
                                             </div>
@@ -1388,9 +1440,9 @@
                                                 <div class="progress-ring-container" style="position: relative; width: 80px; height: 80px;">
                                                     <svg class="progress-ring" width="80" height="80">
                                                         <circle class="progress-ring-bg" stroke="#2a2a3e" stroke-width="5" fill="transparent" r="34" cx="40" cy="40" />
-                                                        <circle class="progress-ring-bar" id="ring-precision" stroke="var(--neon-blue)" stroke-width="5" stroke-linecap="round" fill="transparent" r="34" cx="40" cy="40" stroke-dasharray="213.6" stroke-dashoffset="20" />
+                                                        <circle class="progress-ring-bar" id="ring-precision" stroke="var(--neon-blue)" stroke-width="5" stroke-linecap="round" fill="transparent" r="34" cx="40" cy="40" stroke-dasharray="213.6" stroke-dashoffset="213.6" />
                                                     </svg>
-                                                    <span class="ring-val" id="lbl-res-precision" style="font-size: 1.1rem; font-weight: 700; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">93.5%</span>
+                                                    <span class="ring-val" id="lbl-res-precision" style="font-size: 1.1rem; font-weight: 700; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">0.0%</span>
                                                 </div>
                                                 <span style="font-size: 0.72rem; color: var(--text-muted); margin-top: 6px;">精準率 (Precision)</span>
                                             </div>
@@ -1398,90 +1450,125 @@
                                                 <div class="progress-ring-container" style="position: relative; width: 80px; height: 80px;">
                                                     <svg class="progress-ring" width="80" height="80">
                                                         <circle class="progress-ring-bg" stroke="#2a2a3e" stroke-width="5" fill="transparent" r="34" cx="40" cy="40" />
-                                                        <circle class="progress-ring-bar" id="ring-recall" stroke="var(--neon-purple)" stroke-width="5" stroke-linecap="round" fill="transparent" r="34" cx="40" cy="40" stroke-dasharray="213.6" stroke-dashoffset="30" />
+                                                        <circle class="progress-ring-bar" id="ring-recall" stroke="var(--neon-purple)" stroke-width="5" stroke-linecap="round" fill="transparent" r="34" cx="40" cy="40" stroke-dasharray="213.6" stroke-dashoffset="213.6" />
                                                     </svg>
-                                                    <span class="ring-val" id="lbl-res-recall" style="font-size: 1.1rem; font-weight: 700; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">92.0%</span>
+                                                    <span class="ring-val" id="lbl-res-recall" style="font-size: 1.1rem; font-weight: 700; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">0.0%</span>
                                                 </div>
                                                 <span style="font-size: 0.72rem; color: var(--text-muted); margin-top: 6px;">召回率 (Recall)</span>
                                             </div>
                                         </div>
                                     </div>
+                                    <div class="glass-panel" style="margin: 0; padding: 16px;">
+                                        <div class="section-title"><i class="fa-solid fa-table-cells"></i> 混淆矩陣 (Confusion Matrix)</div>
+                                        <div class="matrix-container" id="confusion-matrix-display" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px; min-height: 160px; font-size: 0.8rem; text-align: center; align-content: center;">
+                                            <div style="color: var(--text-muted); grid-column: span 4;">等待模型訓練完成以載入矩陣</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 右側：預測錯誤樣本分析 -->
+                                <div class="glass-panel" style="margin: 0; padding: 16px; display: flex; flex-direction: column; min-height: 400px;">
+                                    <div class="section-title"><i class="fa-solid fa-triangle-exclamation"></i> 錯誤樣本分析 (Error Analysis)</div>
+                                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 12px;">此處列出驗證集中預測失敗的圖片樣本，點擊可在標記頁面中進行優化修正。</p>
+                                    <div class="error-images-grid" id="error-images-container" style="flex-grow: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; overflow-y: auto; background: rgba(0,0,0,0.1); border-radius: 8px; padding: 8px;">
+                                        <div class="empty-hint" style="text-align: center; color: var(--text-secondary); font-size: 0.8rem; margin: auto;">無預測錯誤，模型完美辨識所有驗證集圖片！🎉</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Tab: Error Analysis (預測錯誤分析，原訓練完成後下方的分析區) -->
-                        <div class="workspace-tab-content" data-tab-content="train-error" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>訓練錯誤樣本分析</h2>
-                                <p>列出模型在驗證集中預測錯誤的樣本，您可以快速找出漏檢與誤檢案例。</p>
-                            </div>
-                            <div class="glass-panel results-card full-width" style="margin-top: 16px; padding: 16px;">
-                                <h3 style="font-size: 0.95rem; margin-bottom: 4px;"><i class="fa-solid fa-triangle-exclamation"></i> 模型預測錯誤圖片分析 (Error Analysis)</h3>
-                                <p class="card-subtitle" style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 12px;">模型在驗證集中預測失敗的樣品，點擊可直接跳回標記頁面修正資料</p>
-                                <div class="error-images-grid" id="error-images-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; max-height: 400px; overflow-y: auto;">
-                                    <!-- 動態生成錯誤分類卡片 -->
-                                    <div class="empty-hint">無預測錯誤，模型完美辨識所有驗證集圖片！🎉</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Inference (推論測試，原 inference-view 內容整合) -->
+                        <!-- Tab: Inference & Deployment (推論測試與部署，整合原 train-inference, train-export, train-registry, train-report) -->
                         <div class="workspace-tab-content" data-tab-content="train-inference" style="display: none;">
                             <div class="workspace-tab-header">
-                                <h2>模型即時推論與測試</h2>
-                                <p>直接上傳任意圖片，或者模擬 Webcam 輸入，測試模型對未知樣本的預測效果。</p>
+                                <h2>推論測試與部署優化</h2>
+                                <p>管理已訓練模型權重，測試未知樣本，導出加速部署格式 (ONNX/TensorRT)，並輸出開發報告。</p>
                             </div>
-                            <!-- 整合原推論視圖的 grid 佈局 -->
-                            <div class="inference-workspace" style="display: grid; grid-template-columns: 280px 1fr; gap: 16px; margin-top: 16px; height: calc(100vh - 200px); overflow: hidden;">
-                                <!-- 左側推論設定 -->
-                                <div class="inference-sidebar glass-panel" style="padding: 14px; gap: 12px; overflow-y: auto;">
-                                    <div class="sidebar-section">
-                                        <div class="section-title" style="font-size: 0.85rem; padding-bottom: 6px;"><i class="fa-solid fa-gears"></i> 測試設定</div>
-                                        <div class="form-group" style="margin-top: 6px;">
-                                            <label for="inference-model-select">測試權重選擇</label>
-                                            <select id="inference-model-select" class="form-control" style="width: 100%; padding: 6px;">
+
+                            <div style="display: grid; grid-template-columns: 320px 1fr; gap: 16px; margin-top: 16px; height: calc(100vh - 200px); overflow: hidden;">
+                                
+                                <!-- 左側：模型管理與部署優化 (可滾動) -->
+                                <div style="display: flex; flex-direction: column; gap: 16px; overflow-y: auto; padding-right: 4px;">
+                                    
+                                    <!-- 1. 模型倉庫管理 -->
+                                    <div class="glass-panel" style="margin: 0; padding: 16px;">
+                                        <div class="section-title"><i class="fa-solid fa-box-archive"></i> 模型倉庫 (Registry)</div>
+                                        <div class="form-group" style="margin-top: 8px;">
+                                            <label for="transform-src-model">選擇來源模型 (.pt)</label>
+                                            <select id="transform-src-model" style="width: 100%;">
+                                                <option value="">無可用模型，請先進行訓練</option>
+                                            </select>
+                                        </div>
+                                        <div class="registry-controls" style="margin-top: 10px; display: flex; gap: 6px;">
+                                            <button class="btn btn-secondary btn-sm" id="btn-tag-prod" style="flex: 1; justify-content: center;"><i class="fa-solid fa-circle-check" style="color: var(--neon-green); margin-right: 4px;"></i> 生產 (Prod)</button>
+                                            <button class="btn btn-secondary btn-sm" id="btn-tag-staging" style="flex: 1; justify-content: center;"><i class="fa-solid fa-circle-pause" style="color: var(--neon-orange); margin-right: 4px;"></i> 測試 (Stage)</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- 2. 模型加速優化與導出 -->
+                                    <div class="glass-panel" style="margin: 0; padding: 16px;">
+                                        <div class="section-title"><i class="fa-solid fa-arrows-spin"></i> 部署導出與壓縮</div>
+                                        <div class="form-group" style="margin-top: 8px;">
+                                            <label for="transform-format">目標部署格式</label>
+                                            <select id="transform-format" style="width: 100%;">
+                                                <option value="onnx" selected>ONNX (跨平台通用格式)</option>
+                                                <option value="tensorrt">TensorRT (NVIDIA GPU 加速)</option>
+                                                <option value="openvino">OpenVINO (Intel 優化)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group" style="margin-top: 8px;">
+                                            <label style="font-size: 0.75rem;">導出精度</label>
+                                            <div class="radio-group" style="display: flex; flex-direction: column; gap: 4px;">
+                                                <label class="radio-label" style="font-size: 0.75rem;">
+                                                    <input type="radio" name="transform-precision" value="FP32" checked>
+                                                    <span>FP32 (無損精度)</span>
+                                                </label>
+                                                <label class="radio-label" style="font-size: 0.75rem;">
+                                                    <input type="radio" name="transform-precision" value="FP16">
+                                                    <span>FP16 (半精度加速)</span>
+                                                </label>
+                                                <label class="radio-label" style="font-size: 0.75rem;">
+                                                    <input type="radio" name="transform-precision" value="INT8">
+                                                    <span>INT8 (8-bit 量化壓縮)</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <button class="btn btn-primary btn-sm" id="btn-start-transform" style="width: 100%; margin-top: 10px;"><i class="fa-solid fa-play"></i> 開始轉換與量化</button>
+                                        
+                                        <!-- 轉檔終端日誌 -->
+                                        <div class="console-box" id="transform-logs" style="margin-top: 10px; height: 100px; overflow-y: auto; background: #020206; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 0.68rem; color: #a0c0a0;">
+                                            <div class="log-line system">等待啟動轉換任務...</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 3. 輸出開發報告 -->
+                                    <div class="glass-panel" style="margin: 0; padding: 16px;">
+                                        <div class="section-title"><i class="fa-solid fa-file-invoice"></i> 專案開發報告</div>
+                                        <p style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 8px;">匯出包含資料健康度、訓練日誌、評估指標與部署配置的完整 PDF 報告。</p>
+                                        <button class="btn btn-secondary btn-sm" id="btn-run-report-gen" style="width: 100%; justify-content: center;"><i class="fa-solid fa-circle-arrow-down"></i> 一鍵輸出開發報告</button>
+                                    </div>
+
+                                </div>
+
+                                <!-- 右側：即時推論測試 -->
+                                <div class="glass-panel" style="margin: 0; padding: 16px; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
+                                    <div class="section-title"><i class="fa-solid fa-eye"></i> 即時推論測試 (Inference Test)</div>
+                                    
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; margin-bottom: 10px;">
+                                        <!-- 推論設定項目 -->
+                                        <div class="form-group" style="margin: 0;">
+                                            <label for="inference-model-select" style="font-size: 0.72rem;">測試權重選擇</label>
+                                            <select id="inference-model-select" class="form-control" style="width: 100%; padding: 4px; font-size: 0.75rem;">
                                                 <option value="">預設模型 (已訓練最佳權重)</option>
                                             </select>
                                         </div>
-                                        <div class="form-group" style="margin-top: 6px;">
-                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                        <div class="form-group" style="margin: 0;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
                                                 <label style="margin: 0; font-size: 0.72rem;">信心度門檻 (Conf)</label>
                                                 <b id="lbl-inf-conf" class="accent-color" style="font-size: 0.75rem;">0.25</b>
                                             </div>
                                             <input type="range" id="slider-inf-conf" min="0.05" max="0.95" step="0.05" value="0.25" style="width: 100%;">
                                         </div>
                                     </div>
-                                    <div class="sidebar-section">
-                                        <div class="section-title" style="font-size: 0.85rem; padding-bottom: 6px;"><i class="fa-solid fa-image"></i> 輸入來源</div>
-                                        <div class="drag-drop-area" id="inf-drag-area" style="padding: 15px; min-height: 90px; border-radius: 8px; margin-top: 6px;">
-                                            <i class="fa-solid fa-cloud-arrow-up" style="font-size: 1.2rem; color: var(--text-muted);"></i>
-                                            <p style="font-size: 0.7rem; margin: 4px 0 0 0;">拖曳上傳或點擊瀏覽</p>
-                                            <input type="file" id="inf-file-input" style="display: none;">
-                                        </div>
-                                        <button class="btn btn-secondary btn-sm" id="btn-inf-webcam" style="width: 100%; margin-top: 8px; font-size: 0.72rem;"><i class="fa-solid fa-video"></i> Webcam 模擬測速</button>
-                                    </div>
-                                    <div class="sidebar-section flex-grow">
-                                        <div class="section-title" style="font-size: 0.85rem; padding-bottom: 6px;"><i class="fa-solid fa-chart-simple"></i> 推論效能指標</div>
-                                        <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px;">
-                                            <div class="metric-card" style="padding: 6px; text-align: center; border-radius: 6px;">
-                                                <span class="metric-value" id="lbl-inf-time" style="font-size: 0.95rem; font-weight: 700;">-</span>
-                                                <span class="metric-label" style="font-size: 0.65rem; color: var(--text-muted);">推論耗時</span>
-                                            </div>
-                                            <div class="metric-card" style="padding: 6px; text-align: center; border-radius: 6px;">
-                                                <span class="metric-value" id="lbl-inf-count" style="font-size: 0.95rem; font-weight: 700;">-</span>
-                                                <span class="metric-label" style="font-size: 0.65rem; color: var(--text-muted);">偵測數量</span>
-                                            </div>
-                                            <div class="metric-card" style="padding: 6px; text-align: center; border-radius: 6px; grid-column: span 2;">
-                                                <span class="metric-value" id="lbl-inf-size" style="font-size: 0.85rem; font-weight: 700;">-</span>
-                                                <span class="metric-label" style="font-size: 0.65rem; color: var(--text-muted);">影像尺寸</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 右側推論畫布與偵測明細 -->
-                                <div class="inference-main-panel" style="display: flex; flex-direction: column; overflow: hidden; gap: 12px; min-height: 0;">
                                     <div class="canvas-panel glass-panel" style="flex-grow: 1; padding: 8px; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
                                         <div class="canvas-container" id="inf-canvas-container" style="flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #050508; border-radius: 8px; overflow: hidden;">
                                             <canvas id="inf-canvas" style="max-width: 100%; max-height: 100%;"></canvas>

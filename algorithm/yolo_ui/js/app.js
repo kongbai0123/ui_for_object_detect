@@ -295,7 +295,7 @@ const App = {
         const gotoRunTab = document.getElementById("btn-goto-run-tab");
         if (gotoRunTab) {
             gotoRunTab.addEventListener("click", () => {
-                this.switchWorkspaceTab("training-workflow-view", "train-execute");
+                this.switchWorkspaceTab("training-workflow-view", "train-config");
             });
         }
     },
@@ -317,7 +317,7 @@ const App = {
             targetTab = "ann-manual";
         } else if (viewId === "train-view") {
             targetViewId = "training-workflow-view";
-            targetTab = "train-execute";
+            targetTab = "train-config";
         } else if (viewId === "inference-view") {
             targetViewId = "training-workflow-view";
             targetTab = "train-inference";
@@ -1476,6 +1476,276 @@ const App = {
             }
         });
 
+        // 資料集格式結構預覽樹狀圖交互邏輯
+        const yoloViewerTitle = document.getElementById("yolo-viewer-title");
+        const yoloViewerBody = document.getElementById("yolo-viewer-body");
+        const selectExportFormat = document.getElementById("select-export-format");
+        const exportStructTitle = document.getElementById("export-struct-title");
+
+        const exportFileContents = {
+            // YOLO 格式
+            "yolo-yaml": {
+                title: "📄 data.yaml",
+                content: `# YOLOv8 資料集配置設定
+path: ../exports/yolo_dataset_v001  # 資料集根目錄
+train: train/images  # 訓練集圖片相對路徑
+val: val/images      # 驗證集圖片相對路徑
+test: test/images    # 測試集圖片相對路徑 (可選)
+
+# 類別對照表 (Class Names)
+names:
+  0: open
+  1: close`
+            },
+            "yolo-img1": {
+                title: "🖼️ train/images/000001.jpg",
+                content: `[影像二進位資料 - Binary Image Data]
+說明：
+- 這是訓練集 (train) 中實際送入模型訓練的圖片檔案。
+- YOLO 模型直接讀取此影像，並與 labels/000001.txt 進行配對。
+- 圖片檔名與對應的標註檔檔名必須完全一致。`
+            },
+            "yolo-txt1": {
+                title: "📄 train/labels/000001.txt",
+                content: `# 歸一化 YOLO 標註檔案 (Normalized Bounding Box Labels)
+# 格式: [class_id] [x_center] [y_center] [width] [height]
+# 數值皆為 0 ~ 1 之間的比例值 (以圖片寬高為基準歸一化)
+
+0 0.4872 0.6125 0.2340 0.3880  # 代表第 0 類 (open)，中心坐標 (0.4872, 0.6125)
+1 0.7410 0.5200 0.1200 0.2000  # 代表第 1 類 (close)，中心坐標 (0.7410, 0.5200)`
+            },
+            "yolo-img2": {
+                title: "🖼️ val/images/000002.jpg",
+                content: `[影像二進位資料 - Binary Image Data]
+說明：
+- 這是驗證集 (val) 中的影像檔案。
+- 驗證集用於在訓練過程中評估模型泛化能力、計算 mAP。
+- 驗證集圖片不會直接參與梯度更新。`
+            },
+            "yolo-txt2": {
+                title: "📄 val/labels/000002.txt",
+                content: `# 歸一化 YOLO 標註檔案
+0 0.3520 0.4810 0.1500 0.2600  # 代表第 0 類 (open)`
+            },
+            // COCO 格式
+            "coco-json": {
+                title: "📄 annotations/instances_train.json",
+                content: `{
+  "info": {
+    "description": "Vision Training Studio Exported COCO Dataset",
+    "date_created": "2026/06/16"
+  },
+  "images": [
+    {
+      "id": 1,
+      "width": 640,
+      "height": 480,
+      "file_name": "000001.jpg"
+    }
+  ],
+  "annotations": [
+    {
+      "id": 1001,
+      "image_id": 1,
+      "category_id": 0,
+      "bbox": [150, 200, 120, 80], // 格式為: [x_min, y_min, width, height] (絕對像素值)
+      "area": 9600,
+      "iscrowd": 0
+    }
+  ],
+  "categories": [
+    { "id": 0, "name": "open", "supercategory": "object" },
+    { "id": 1, "name": "close", "supercategory": "object" }
+  ]
+}`
+            },
+            "coco-img1": {
+                title: "🖼️ train/000001.jpg",
+                content: `[影像二進位資料 - Binary Image Data]
+說明：
+- COCO 格式將所有圖片放在統一的資料夾中（例如 train/ 或 val/）。
+- 影像的配對與標籤不依賴檔名，而是由 annotations/instances_train.json 中的 "file_name" 進行對照連結。`
+            },
+            "coco-img2": {
+                title: "🖼️ val/000002.jpg",
+                content: `[影像二進位資料 - Binary Image Data]
+說明：
+- COCO 格式的驗證集影像檔案，與 instances_val.json 中定義的圖片資訊相對應。`
+            },
+            // PASCAL VOC 格式
+            "voc-xml1": {
+                title: "📄 Annotations/000001.xml",
+                content: `<annotation>
+    <folder>JPEGImages</folder>
+    <filename>000001.jpg</filename>
+    <path>./voc_dataset/JPEGImages/000001.jpg</path>
+    <source>
+        <database>Unknown</database>
+    </source>
+    <size>
+        <width>640</width>
+        <height>480</height>
+        <depth>3</depth>
+    </size>
+    <segmented>0</segmented>
+    <object>
+        <name>open</name>
+        <pose>Unspecified</pose>
+        <truncated>0</truncated>
+        <difficult>0</difficult>
+        <bndbox>
+            <xmin>150</xmin> <!-- 左上角 X (絕對像素坐標) -->
+            <ymin>200</ymin> <!-- 左上角 Y -->
+            <xmax>270</xmax> <!-- 右下角 X -->
+            <ymax>280</ymax> <!-- 右下角 Y -->
+        </bndbox>
+    </object>
+</annotation>`
+            },
+            "voc-xml2": {
+                title: "📄 Annotations/000002.xml",
+                content: `<annotation>
+    <folder>JPEGImages</folder>
+    <filename>000002.jpg</filename>
+    <size>
+        <width>640</width>
+        <height>480</height>
+        <depth>3</depth>
+    </size>
+    <object>
+        <name>close</name>
+        <bndbox>
+            <xmin>180</xmin>
+            <ymin>150</ymin>
+            <xmax>300</xmax>
+            <ymax>290</ymax>
+        </bndbox>
+    </object>
+</annotation>`
+            },
+            "voc-img1": {
+                title: "🖼️ JPEGImages/000001.jpg",
+                content: `[影像二進位資料 - Binary Image Data]
+說明：
+- PASCAL VOC 格式將所有圖片檔存放於 JPEGImages/ 目錄下。
+- 與之相對應的 XML 標註檔存放在 Annotations/ 中，主幹名稱完全相同。`
+            },
+            "voc-img2": {
+                title: "🖼️ JPEGImages/000002.jpg",
+                content: `[影像二極體資料 - Binary Image Data]
+說明：
+- 對應於 Annotations/000002.xml 的影像檔。`
+            },
+            "voc-txt": {
+                title: "📄 ImageSets/Main/train.txt",
+                content: `000001
+000002
+# 說明：
+# 此文字檔儲存了所有用於訓練的影像主檔名（不含副檔名）。
+# 系統透過此清單尋找 Annotations/ 下對應的 xml 檔案來加載訓練集。`
+            }
+        };
+
+        const updateExportViewer = (fileKey) => {
+            const data = exportFileContents[fileKey];
+            if (!data || !yoloViewerTitle || !yoloViewerBody) return;
+            yoloViewerTitle.innerText = data.title;
+            yoloViewerBody.textContent = data.content;
+        };
+
+        const handleTreeClicks = () => {
+            const fileNodes = document.querySelectorAll(".yolo-tree-column .file-node");
+            fileNodes.forEach(node => {
+                node.replaceWith(node.cloneNode(true));
+            });
+
+            const newFileNodes = document.querySelectorAll(".yolo-tree-column .file-node");
+            newFileNodes.forEach(node => {
+                const fType = node.getAttribute("data-file");
+                if (node.classList.contains("active")) {
+                    node.style.background = "rgba(52, 152, 219, 0.15)";
+                    node.style.color = "#3498db";
+                } else {
+                    node.style.background = "none";
+                    if (fType.includes("yaml") || fType.includes("json") || fType.includes("xml")) {
+                        node.style.color = "#3498db";
+                    } else if (fType.includes("img")) {
+                        node.style.color = "#9b59b6";
+                    } else if (fType.includes("txt")) {
+                        node.style.color = "#2ecc71";
+                    }
+                }
+
+                node.addEventListener("click", () => {
+                    newFileNodes.forEach(n => {
+                        n.classList.remove("active");
+                        n.style.background = "none";
+                        const fKey = n.getAttribute("data-file");
+                        if (fKey.includes("yaml") || fKey.includes("json") || fKey.includes("xml")) {
+                            n.style.color = "#3498db";
+                        } else if (fKey.includes("img")) {
+                            n.style.color = "#9b59b6";
+                        } else if (fKey.includes("txt")) {
+                            n.style.color = "#2ecc71";
+                        }
+                    });
+
+                    node.classList.add("active");
+                    node.style.background = "rgba(52, 152, 219, 0.15)";
+                    node.style.color = "#3498db";
+
+                    const fileKey = node.getAttribute("data-file");
+                    updateExportViewer(fileKey);
+                });
+            });
+        };
+
+        if (selectExportFormat) {
+            selectExportFormat.addEventListener("change", () => {
+                const format = selectExportFormat.value;
+                const treeYolo = document.getElementById("tree-yolo");
+                const treeCoco = document.getElementById("tree-coco");
+                const treeVoc = document.getElementById("tree-voc");
+
+                if (treeYolo) treeYolo.style.display = "none";
+                if (treeCoco) treeCoco.style.display = "none";
+                if (treeVoc) treeVoc.style.display = "none";
+
+                let defaultKey = "yolo-yaml";
+                if (format === "yolo") {
+                    if (treeYolo) treeYolo.style.display = "block";
+                    if (exportStructTitle) exportStructTitle.innerHTML = `<i class="fa-solid fa-folder-tree"></i> YOLO 資料集結構預覽 (Standard Folder Structure)`;
+                    defaultKey = "yolo-yaml";
+                } else if (format === "coco") {
+                    if (treeCoco) treeCoco.style.display = "block";
+                    if (exportStructTitle) exportStructTitle.innerHTML = `<i class="fa-solid fa-folder-tree"></i> COCO 資料集結構預覽 (Standard Folder Structure)`;
+                    defaultKey = "coco-json";
+                } else if (format === "voc") {
+                    if (treeVoc) treeVoc.style.display = "block";
+                    if (exportStructTitle) exportStructTitle.innerHTML = `<i class="fa-solid fa-folder-tree"></i> PASCAL VOC 資料集結構預覽 (Standard Folder Structure)`;
+                    defaultKey = "voc-xml1";
+                }
+
+                const allNodes = document.querySelectorAll(".yolo-tree-column .file-node");
+                allNodes.forEach(n => {
+                    n.classList.remove("active");
+                    n.style.background = "none";
+                });
+
+                const activeNode = document.querySelector(`.yolo-tree-column .file-node[data-file="${defaultKey}"]`);
+                if (activeNode) {
+                    activeNode.classList.add("active");
+                }
+
+                handleTreeClicks();
+                updateExportViewer(defaultKey);
+            });
+        }
+
+        // 首次加載時初始化
+        handleTreeClicks();
+        updateExportViewer("yolo-yaml");
+
         this.on("btn-run-report-gen", "click", async () => {
             try {
                 const res = await API.generateReport();
@@ -1496,49 +1766,55 @@ const App = {
                 title: "Standard 方案包含：",
                 items: [
                     { name: "水平翻轉 (Horizontal Flip)", on: true },
-                    { name: "隨機旋轉 ±10° (Rotation)", on: true },
-                    { name: "亮度調整 0.8~1.2 (Brightness)", on: true },
-                    { name: "高斯模糊 (Gaussian Blur)", on: false },
                     { name: "垂直翻轉 (Vertical Flip)", on: false },
-                    { name: "隨機縮放裁剪 (Scale & Crop)", on: false },
+                    { name: "隨機旋轉 ±10° (Rotation)", on: true },
+                    { name: "隨機剪切 (Shear)", on: false },
+                    { name: "隨機縮放裁剪 (Scale & Crop)", on: true },
                     { name: "隨機平移 (Translation)", on: false },
+                    { name: "亮度調整 (Brightness)", on: true },
+                    { name: "對比度調整 (Contrast)", on: false },
+                    { name: "色彩對比度 HSV (Color Jitter)", on: false },
+                    { name: "高斯模糊 (Gaussian Blur)", on: false },
                     { name: "椒鹽雜訊 (Salt & Pepper)", on: false },
-                    { name: "隨機擦除 (Cutout / Erasing)", on: false },
-                    { name: "灰階化 (Grayscale)", on: false }
+                    { name: "隨機擦除 (Cutout / Erasing)", on: false }
                 ],
-                checks: { flip: true, rotate: true, brightness: true, blur: false, vflip: false, "scale-crop": false, translate: false, "salt-pepper": false, cutout: false, grayscale: false }
+                checks: { flip: true, vflip: false, rotate: true, shear: false, "scale-crop": true, translate: false, brightness: true, contrast: false, "color-jitter": false, blur: false, "salt-pepper": false, cutout: false }
             },
             none: {
                 title: "None 方案 — 不做任何增強：",
                 items: [
                     { name: "水平翻轉 (Horizontal Flip)", on: false },
-                    { name: "隨機旋轉 ±10° (Rotation)", on: false },
-                    { name: "亮度調整 0.8~1.2 (Brightness)", on: false },
-                    { name: "高斯模糊 (Gaussian Blur)", on: false },
                     { name: "垂直翻轉 (Vertical Flip)", on: false },
+                    { name: "隨機旋轉 ±10° (Rotation)", on: false },
+                    { name: "隨機剪切 (Shear)", on: false },
                     { name: "隨機縮放裁剪 (Scale & Crop)", on: false },
                     { name: "隨機平移 (Translation)", on: false },
+                    { name: "亮度調整 (Brightness)", on: false },
+                    { name: "對比度調整 (Contrast)", on: false },
+                    { name: "色彩對比度 HSV (Color Jitter)", on: false },
+                    { name: "高斯模糊 (Gaussian Blur)", on: false },
                     { name: "椒鹽雜訊 (Salt & Pepper)", on: false },
-                    { name: "隨機擦除 (Cutout / Erasing)", on: false },
-                    { name: "灰階化 (Grayscale)", on: false }
+                    { name: "隨機擦除 (Cutout / Erasing)", on: false }
                 ],
-                checks: { flip: false, rotate: false, brightness: false, blur: false, vflip: false, "scale-crop": false, translate: false, "salt-pepper": false, cutout: false, grayscale: false }
+                checks: { flip: false, vflip: false, rotate: false, shear: false, "scale-crop": false, translate: false, brightness: false, contrast: false, "color-jitter": false, blur: false, "salt-pepper": false, cutout: false }
             },
             strong: {
                 title: "Strong 方案 — 全部啟用：",
                 items: [
                     { name: "水平翻轉 (Horizontal Flip)", on: true },
-                    { name: "隨機旋轉 ±10° (Rotation)", on: true },
-                    { name: "亮度調整 0.8~1.2 (Brightness)", on: true },
-                    { name: "高斯模糊 (Gaussian Blur)", on: true },
                     { name: "垂直翻轉 (Vertical Flip)", on: true },
+                    { name: "隨機旋轉 ±10° (Rotation)", on: true },
+                    { name: "隨機剪切 (Shear)", on: true },
                     { name: "隨機縮放裁剪 (Scale & Crop)", on: true },
                     { name: "隨機平移 (Translation)", on: true },
+                    { name: "亮度調整 (Brightness)", on: true },
+                    { name: "對比度調整 (Contrast)", on: true },
+                    { name: "色彩對比度 HSV (Color Jitter)", on: true },
+                    { name: "高斯模糊 (Gaussian Blur)", on: true },
                     { name: "椒鹽雜訊 (Salt & Pepper)", on: true },
-                    { name: "隨機擦除 (Cutout / Erasing)", on: true },
-                    { name: "灰階化 (Grayscale)", on: true }
+                    { name: "隨機擦除 (Cutout / Erasing)", on: true }
                 ],
-                checks: { flip: true, rotate: true, brightness: true, blur: true, vflip: true, "scale-crop": true, translate: true, "salt-pepper": true, cutout: true, grayscale: true }
+                checks: { flip: true, vflip: true, rotate: true, shear: true, "scale-crop": true, translate: true, brightness: true, contrast: true, "color-jitter": true, blur: true, "salt-pepper": true, cutout: true }
             }
         };
 
@@ -1562,7 +1838,7 @@ const App = {
 
                     const preset = btn.getAttribute("data-preset");
                     if (preset === "custom") {
-                        if (customAugPanel) customAugPanel.style.display = "block";
+                        if (customAugPanel) customAugPanel.style.display = "flex";
                         if (presetDescPanel) presetDescPanel.style.display = "none";
                     } else {
                         if (customAugPanel) customAugPanel.style.display = "none";
@@ -1578,6 +1854,44 @@ const App = {
                         }
                     }
                 });
+            });
+            // 初始渲染標準方案的說明
+            updatePresetDesc("standard");
+        }
+
+        // 自定義增強管道載入範例邏輯
+        const pipelineExampleBtn = this.el("btn-load-pipeline-example");
+        const pipelineTextarea = this.el("txt-custom-pipeline");
+        if (pipelineExampleBtn && pipelineTextarea) {
+            pipelineExampleBtn.addEventListener("click", () => {
+                const exampleJson = [
+                    {
+                        "__class_fullname__": "HorizontalFlip",
+                        "p": 0.5
+                    },
+                    {
+                        "__class_fullname__": "RandomBrightnessContrast",
+                        "brightness_limit": 0.2,
+                        "contrast_limit": 0.2,
+                        "p": 0.5
+                    },
+                    {
+                        "__class_fullname__": "ShiftScaleRotate",
+                        "shift_limit": 0.06,
+                        "scale_limit": 0.1,
+                        "rotate_limit": 15,
+                        "p": 0.5
+                    },
+                    {
+                        "__class_fullname__": "HueSaturationValue",
+                        "hue_shift_limit": 20,
+                        "sat_shift_limit": 30,
+                        "val_shift_limit": 20,
+                        "p": 0.5
+                    }
+                ];
+                pipelineTextarea.value = JSON.stringify(exampleJson, null, 4);
+                showToast("已載入 Albumentations 範例管道", "info");
             });
         }
 
@@ -1680,7 +1994,7 @@ const App = {
             showToast("訓練線程已成功啟動！", "success");
 
             // 介面切換
-            this.switchWorkspaceTab("training-workflow-view", "train-execute");
+            this.switchWorkspaceTab("training-workflow-view", "train-config");
             const startPanel = document.getElementById("train-start-panel");
             const dashboardArea = document.getElementById("training-dashboard-area");
             const resultsArea = document.getElementById("train-results-area");
@@ -1688,16 +2002,32 @@ const App = {
             if (dashboardArea) dashboardArea.style.display = "block";
             if (resultsArea) resultsArea.style.display = "none";
 
-            // 顯示底端進度條
+            // 顯示參數配置下方的進度條，隱藏閒置提示，並切換啟動/停止按鈕
+            const trainProgressSection = document.getElementById("train-progress-section");
+            const trainIdleHint = document.getElementById("train-idle-hint");
+            const btnStartTrain = document.getElementById("btn-start-train");
+            const btnStopTrain = document.getElementById("btn-stop-train");
+
+            if (trainProgressSection) trainProgressSection.style.display = "block";
+            if (trainIdleHint) trainIdleHint.style.display = "none";
+            if (btnStartTrain) btnStartTrain.style.display = "none";
+            if (btnStopTrain) btnStopTrain.style.display = "block";
+
+            // 顯示底端進度條 (防禦性檢查與更新)
             const bottomProgress = document.getElementById("train-bottom-progress");
             if (bottomProgress) {
                 bottomProgress.classList.add("visible");
-                document.getElementById("bottom-progress-pct").textContent = "0%";
-                document.getElementById("bottom-progress-bar").style.width = "0%";
-                document.getElementById("bottom-elapsed").textContent = "--:--";
-                document.getElementById("bottom-remaining").textContent = "--:--";
-                document.getElementById("bottom-eta").textContent = "--:--:--";
             }
+            const bottomPct = document.getElementById("bottom-progress-pct");
+            if (bottomPct) bottomPct.textContent = "0%";
+            const bottomBar = document.getElementById("bottom-progress-bar");
+            if (bottomBar) bottomBar.style.width = "0%";
+            const bottomElapsed = document.getElementById("bottom-elapsed");
+            if (bottomElapsed) bottomElapsed.textContent = "--:--";
+            const bottomRemaining = document.getElementById("bottom-remaining");
+            if (bottomRemaining) bottomRemaining.textContent = "--:--";
+            const bottomEta = document.getElementById("bottom-eta");
+            if (bottomEta) bottomEta.textContent = "--:--:--";
 
             // 記錄訓練起始時間
             this._trainStartTime = Date.now();
@@ -1746,11 +2076,15 @@ const App = {
                 document.getElementById("lbl-elapsed").textContent = this.formatTime(status.elapsed_time);
                 document.getElementById("lbl-remaining").textContent = this.formatTime(status.remaining_time);
 
-                // 3.1 更新底端總進度條
-                document.getElementById("bottom-progress-pct").textContent = `${pct}%`;
-                document.getElementById("bottom-progress-bar").style.width = `${pct}%`;
-                document.getElementById("bottom-elapsed").textContent = this.formatTime(status.elapsed_time);
-                document.getElementById("bottom-remaining").textContent = this.formatTime(status.remaining_time);
+                // 3.1 更新底端總進度條 (防禦性檢查與更新)
+                const bottomPct = document.getElementById("bottom-progress-pct");
+                if (bottomPct) bottomPct.textContent = `${pct}%`;
+                const bottomBar = document.getElementById("bottom-progress-bar");
+                if (bottomBar) bottomBar.style.width = `${pct}%`;
+                const bottomElapsed = document.getElementById("bottom-elapsed");
+                if (bottomElapsed) bottomElapsed.textContent = this.formatTime(status.elapsed_time);
+                const bottomRemaining = document.getElementById("bottom-remaining");
+                if (bottomRemaining) bottomRemaining.textContent = this.formatTime(status.remaining_time);
 
                 // 預估完成時間 (ETA = 現在時間 + 剩餘秒數)
                 if (status.remaining_time > 0) {
@@ -1758,7 +2092,8 @@ const App = {
                     const hh = String(etaDate.getHours()).padStart(2, "0");
                     const mm = String(etaDate.getMinutes()).padStart(2, "0");
                     const ss = String(etaDate.getSeconds()).padStart(2, "0");
-                    document.getElementById("bottom-eta").textContent = `${hh}:${mm}:${ss}`;
+                    const bottomEta = document.getElementById("bottom-eta");
+                    if (bottomEta) bottomEta.textContent = `${hh}:${mm}:${ss}`;
                 }
 
                 // 4. 更新日誌並滾動到底部
@@ -1794,17 +2129,44 @@ const App = {
                 `;
                 document.getElementById("epoch-nums").textContent = `${status.total_epochs} / ${status.total_epochs}`;
 
+                // 還原按鈕與進度條/提示
+                const trainProgressSection = document.getElementById("train-progress-section");
+                const trainIdleHint = document.getElementById("train-idle-hint");
+                const btnStartTrain = document.getElementById("btn-start-train");
+                const btnStopTrain = document.getElementById("btn-stop-train");
+
+                if (trainProgressSection) trainProgressSection.style.display = "none";
+                if (trainIdleHint) trainIdleHint.style.display = "block";
+                if (btnStartTrain) btnStartTrain.style.display = "block";
+                if (btnStopTrain) btnStopTrain.style.display = "none";
+
                 // 底端進度條完成
-                document.getElementById("bottom-progress-pct").textContent = "100%";
-                document.getElementById("bottom-progress-bar").style.width = "100%";
-                document.getElementById("bottom-remaining").textContent = "00:00";
-                document.getElementById("bottom-eta").textContent = "已完成";
+                const bottomPct = document.getElementById("bottom-progress-pct");
+                if (bottomPct) bottomPct.textContent = "100%";
+                const bottomBar = document.getElementById("bottom-progress-bar");
+                if (bottomBar) bottomBar.style.width = "100%";
+                const bottomRemaining = document.getElementById("bottom-remaining");
+                if (bottomRemaining) bottomRemaining.textContent = "00:00";
+                const bottomEta = document.getElementById("bottom-eta");
+                if (bottomEta) bottomEta.textContent = "已完成";
 
                 // 展示成果 Dashboard
                 this.showTrainingResults(status.best_accuracy);
             } else if (status.status === "stopped") {
                 clearInterval(this.trainTimer);
                 showToast("訓練已被使用者終止", "warn");
+
+                // 還原按鈕與進度條/提示
+                const trainProgressSection = document.getElementById("train-progress-section");
+                const trainIdleHint = document.getElementById("train-idle-hint");
+                const btnStartTrain = document.getElementById("btn-start-train");
+                const btnStopTrain = document.getElementById("btn-stop-train");
+
+                if (trainProgressSection) trainProgressSection.style.display = "none";
+                if (trainIdleHint) trainIdleHint.style.display = "block";
+                if (btnStartTrain) btnStartTrain.style.display = "block";
+                if (btnStopTrain) btnStopTrain.style.display = "none";
+
                 const startPanel = document.getElementById("train-start-panel");
                 const dashboardArea = document.getElementById("training-dashboard-area");
                 if (startPanel) startPanel.style.display = "block";
@@ -2993,7 +3355,7 @@ const App = {
 
     openModelRegistryModal() {
         this.switchView("training-workflow-view");
-        this.switchWorkspaceTab("training-workflow-view", "train-registry");
+        this.switchWorkspaceTab("training-workflow-view", "train-inference");
     },
 
     openLogViewerModal() {
@@ -3424,15 +3786,19 @@ const App = {
                 const tab = li.getAttribute("data-tab");
                 li.classList.remove("disabled-semi-transparent");
                 
-                // 注意：如果為 auto 模式，則手動相關 sidebar 選單半透明；如果為 manual（或常駐 manual，即 !mode），則自動相關 sidebar 選單半透明。
                 if (mode === "auto") {
+                    // 自動標註模式：排除手動標註與未標註資料池，其餘保留
                     if (tab === "ann-manual" || tab === "ann-unlabeled") {
-                        li.classList.add("disabled-semi-transparent");
+                        li.style.display = "none";
+                    } else {
+                        li.style.display = "";
                     }
                 } else {
-                    // manual 或是未選 (!mode)，常駐為手動標註，此時自動標註 sidebar 選單半透明
+                    // 手動標註模式（或預設）：排除自動標註與候選審核，其餘保留
                     if (tab === "ann-auto" || tab === "ann-review") {
-                        li.classList.add("disabled-semi-transparent");
+                        li.style.display = "none";
+                    } else {
+                        li.style.display = "";
                     }
                 }
             });
