@@ -213,6 +213,30 @@ def choose_directory():
     except Exception as e:
         return {"status": "error", "message": str(e), "path": ""}
 
+@app.get("/api/project/choose_file")
+def choose_file():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        
+        file_path = filedialog.askopenfilename(
+            initialdir="C:/",
+            title="選擇 YOLO 模型權重檔案 (.pt)",
+            filetypes=[("YOLO Weights", "*.pt"), ("All Files", "*.*")]
+        )
+        root.destroy()
+        
+        if file_path:
+            file_path = file_path.replace("\\", "/")
+            return {"status": "success", "path": file_path}
+        return {"status": "cancelled", "path": ""}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "path": ""}
+
 class ProjectUpdate(BaseModel):
     input_path: str
     output_path: str
@@ -615,21 +639,12 @@ def start_train(config: TrainConfig):
     
     stop_train_event.clear()
     
-    # 檢查是否啟動真實 YOLOv8n / YOLO11n 偵測訓練 (Phase 2)
-    use_real_yolo = False
-    if config.task_type == "detection" and "yolo" in config.model_id.lower():
-        try:
-            import ultralytics
-            use_real_yolo = True
-        except ImportError:
-            pass
-            
-    if use_real_yolo:
-        from training.factory import TrainerFactory
-        config_dict = config.model_dump()
-        config_dict["framework"] = "ultralytics"
-        config_dict["weights"] = config.model_id + ".pt" if "yolo" in config.model_id else config.model_id
-        
+    # 統一調用 TrainerFactory 以利真實/模擬適配器自主對齊
+    from training.factory import TrainerFactory
+    config_dict = config.model_dump()
+    config_dict["weights"] = config.model_id + ".pt" if "yolo" in config.model_id.lower() else config.model_id
+    
+    try:
         current_trainer = TrainerFactory.create_trainer(
             config=config_dict,
             output_dir=str(output_folder),
@@ -637,10 +652,12 @@ def start_train(config: TrainConfig):
             input_path=active_project["input_path"]
         )
         current_trainer.train()
+        # 初始化適配器狀態
         train_status = current_trainer.get_status()
         train_status["log"] = initial_log + train_status["log"]
-    else:
-        # 執行模擬訓練並傳入完整的 TrainConfig
+    except Exception as e:
+        # Fallback 到內置的 simulate_training_job 進行一般性模擬
+        print(f"[TRAIN] 無法使用工廠創建適配器 ({e})，Fallback 使用一般模擬。")
         current_trainer = None
         train_thread = threading.Thread(
             target=simulate_training_job,
@@ -1133,7 +1150,9 @@ def dataset_split(req: SplitRequest):
     
     images = []
     for root, dirs, files in os.walk(input_dir):
-        if "runs" in root:
+        # 排除 runs 與 exports 目錄
+        parts = Path(root).parts
+        if "runs" in parts or "exports" in parts:
             continue
         for f in files:
             ext = Path(f).suffix.lower()
@@ -1144,21 +1163,164 @@ def dataset_split(req: SplitRequest):
     if len(images) == 0:
         return {"status": "error", "message": "資料集中沒有圖片，無法進行切分"}
         
+    # Group Stratified Split 演算法
+    # 1. 載入 labels.csv 取得每張圖片的類別標籤
+    label_map = {}
+    csv_file = input_dir / "labels.csv"
+    if csv_file.exists():
+        try:
+            import csv
+            with open(csv_file, "r", encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    image_path = row.get("image_path", "")
+                    label_val = row.get("label", "")
+                    if image_path:
+                        labels_list = []
+                        label_str = label_val.strip()
+                        if label_str.startswith("[") and label_str.endswith("]"):
+                            try:
+                                boxes = json.loads(label_str)
+                                for b in boxes:
+                                    lbl = b.get("label", "unknown")
+                                    labels_list.append(lbl)
+                            except Exception:
+                                if label_str:
+                                    labels_list.append(label_str)
+                        else:
+                            if label_str:
+                                labels_list.append(label_str)
+                        label_map[image_path] = labels_list
+        except Exception as e:
+            print(f"Error reading labels.csv during split: {e}")
+
+    # 2. 定義群組規則 (Group Key)
+    def get_group_key(rel_path: str) -> str:
+        parts = Path(rel_path).parts
+        if len(parts) > 1:
+            return parts[0]
+        else:
+            filename = parts[-1]
+            for sep in ['_', '-']:
+                if sep in filename:
+                    prefix = filename.split(sep)[0]
+                    if prefix.strip():
+                        return prefix
+            return Path(filename).stem
+
+    # 3. 分群
+    groups = {}
+    for img in images:
+        g_key = get_group_key(img)
+        if g_key not in groups:
+            groups[g_key] = []
+        groups[g_key].append(img)
+
+    # 4. 統計全體與群組內各類別數量
+    total_class_counts = {}
+    group_stats = {}
+    for g_key, img_list in groups.items():
+        g_classes = {}
+        for img in img_list:
+            classes_in_img = label_map.get(img, ["background"])
+            if not classes_in_img:
+                classes_in_img = ["background"]
+            for c in classes_in_img:
+                g_classes[c] = g_classes.get(c, 0) + 1
+                total_class_counts[c] = total_class_counts.get(c, 0) + 1
+        group_stats[g_key] = g_classes
+
+    # 5. 排定類別稀有度順序（出現次數少者排前面）
+    sorted_classes = [c for c, count in sorted(total_class_counts.items(), key=lambda x: x[1])]
+
+    def get_group_rarity_score(g_key):
+        g_classes = group_stats[g_key]
+        min_rank = len(sorted_classes)
+        for c in g_classes:
+            if c in sorted_classes:
+                rank = sorted_classes.index(c)
+                if rank < min_rank:
+                    min_rank = rank
+        return min_rank
+
+    # 6. 對群組依最稀有類別優先度升序、圖片數量降序進行排序
+    sorted_group_keys = sorted(
+        groups.keys(),
+        key=lambda k: (get_group_rarity_score(k), -len(groups[k]))
+    )
+
+    # 7. 啟發式分配群組
+    target_ratios = {
+        "train": req.train_ratio,
+        "val": req.val_ratio,
+        "test": req.test_ratio
+    }
+    
+    # 確保 ratio 之和為 1.0
+    sum_ratios = sum(target_ratios.values())
+    if sum_ratios > 0:
+        target_ratios = {k: v / sum_ratios for k, v in target_ratios.items()}
+    else:
+        target_ratios = {"train": 0.7, "val": 0.2, "test": 0.1}
+
+    total_images_count = len(images)
+    expected_sizes = {
+        k: max(1, int(total_images_count * v)) for k, v in target_ratios.items()
+    }
+
+    splits = {"train": [], "val": [], "test": []}
+    allocated_sizes = {"train": 0, "val": 0, "test": 0}
+    allocated_class_counts = {
+        s: {c: 0 for c in total_class_counts} for s in ["train", "val", "test"]
+    }
+    expected_class_counts = {
+        s: {c: count * ratio for c, count in total_class_counts.items()}
+        for s, ratio in target_ratios.items()
+    }
+
+    for g_key in sorted_group_keys:
+        g_imgs = groups[g_key]
+        g_classes = group_stats[g_key]
+        g_size = len(g_imgs)
+
+        best_set = None
+        best_score = float('inf')
+
+        for s_name in ["train", "val", "test"]:
+            if target_ratios[s_name] == 0:
+                continue
+
+            size_ratio = allocated_sizes[s_name] / expected_sizes[s_name]
+            class_score = 0.0
+            for c, count in g_classes.items():
+                expected = expected_class_counts[s_name][c]
+                allocated = allocated_class_counts[s_name][c]
+                class_score += (allocated + count) / (expected + 1e-5)
+
+            # 總得分：結合圖片數比值與類別飽和度
+            score = size_ratio * 2.0 + class_score
+            if score < best_score:
+                best_score = score
+                best_set = s_name
+
+        if not best_set:
+            best_set = "train"
+
+        splits[best_set].extend(g_imgs)
+        allocated_sizes[best_set] += g_size
+        for c, count in g_classes.items():
+            allocated_class_counts[best_set][c] += count
+
+    # 固定隨機 Seed 42 打亂每個分割集內部的順序，但保留成員不變以防 Data Leakage
     import random
-    random.shuffle(images)
-    
-    total = len(images)
-    train_end = int(total * req.train_ratio)
-    val_end = train_end + int(total * req.val_ratio)
-    
-    train_imgs = images[:train_end]
-    val_imgs = images[train_end:val_end]
-    test_imgs = images[val_end:]
-    
+    rng = random.Random(42)
+    for s_name in splits:
+        rng.shuffle(splits[s_name])
+
     split_data = {
-        "train": train_imgs,
-        "val": val_imgs,
-        "test": test_imgs,
+        "train": splits["train"],
+        "val": splits["val"],
+        "test": splits["test"],
         "ratios": {
             "train": req.train_ratio,
             "val": req.val_ratio,
@@ -1166,16 +1328,16 @@ def dataset_split(req: SplitRequest):
         },
         "timestamp": time.time()
     }
-    
+
     with open(input_dir / "split_config.json", "w", encoding="utf-8") as f:
         json.dump(split_data, f, indent=4, ensure_ascii=False)
-        
+
     return {
         "status": "success",
-        "message": f"資料集已成功切分！(訓練集: {len(train_imgs)}, 驗證集: {len(val_imgs)}, 測試集: {len(test_imgs)})",
-        "train_count": len(train_imgs),
-        "val_count": len(val_imgs),
-        "test_count": len(test_imgs)
+        "message": f"資料集已成功完成群組分層切分 (Group Stratified Split)！(訓練集: {len(splits['train'])}, 驗證集: {len(splits['val'])}, 測試集: {len(splits['test'])})",
+        "train_count": len(splits["train"]),
+        "val_count": len(splits["val"]),
+        "test_count": len(splits["test"])
     }
 
 def get_project_images(input_dir: Path) -> List[str]:
@@ -1516,6 +1678,182 @@ def read_logs():
             pass
             
     return {"source": "None", "lines": ["目前尚無日誌記錄。"]}
+
+class AutoLabelPayload(BaseModel):
+    target_dir: str
+    model_source: str = "project_best"
+    model_path: Optional[str] = None
+    confidence: float = 0.75
+    iou: float = 0.5
+
+def find_latest_best_model() -> str:
+    if not active_project.get("output_path"):
+        raise HTTPException(status_code=400, detail="目前無啟用中的專案或 output_path 未設定")
+
+    output_dir = Path(active_project["output_path"])
+    candidates = []
+    
+    if output_dir.exists():
+        for p in output_dir.glob("train_*/**/*.pt"):
+            if p.name in ["best.pt", "best_model.pt"]:
+                candidates.append(p)
+                
+    if not candidates:
+        raise HTTPException(
+            status_code=404, 
+            detail="找不到專案訓練產生的最佳模型 (best.pt 或 best_model.pt)。請先在訓練中心訓練模型，或者選擇使用預訓練 YOLOv8n/YOLO11n 模型。"
+        )
+        
+    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+    return str(latest)
+
+def resolve_autolabel_model(payload: AutoLabelPayload) -> str:
+    if payload.model_source == "pretrained_yolov8n":
+        return "yolov8n.pt"
+    elif payload.model_source == "pretrained_yolo11n":
+        return "yolo11n.pt"
+    elif payload.model_source == "custom_path":
+        if not payload.model_path:
+            raise HTTPException(status_code=400, detail="自訂模型來源需要提供模型路徑")
+        m_path = Path(payload.model_path).resolve()
+        if not m_path.exists():
+            raise HTTPException(status_code=404, detail=f"找不到自訂模型檔案: {m_path}")
+        return str(m_path)
+    elif payload.model_source == "project_best":
+        return find_latest_best_model()
+    else:
+        raise HTTPException(status_code=400, detail=f"不支援的模型來源: {payload.model_source}")
+
+def merge_and_save_labels(target_dir: Path, label_cache: dict):
+    csv_file = target_dir / "labels.csv"
+    existing_cache = {}
+    
+    if csv_file.exists():
+        try:
+            import csv
+            with open(csv_file, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    existing_cache[row["image_path"]] = {
+                        "label": row["label"],
+                        "status": row["status"]
+                    }
+        except Exception as e:
+            print(f"[AUTOLABEL] 讀取現有 labels.csv 失敗: {e}")
+            
+    # 合併新舊標記
+    for img_path, new_data in label_cache.items():
+        if img_path in existing_cache:
+            old_status = existing_cache[img_path].get("status", "pending")
+            old_label = existing_cache[img_path].get("label", "")
+            if old_status == "verified" and old_label not in ["", "[]"]:
+                # 保留已確認的標籤，不予覆蓋
+                continue
+        existing_cache[img_path] = new_data
+        
+    # 寫入 CSV 檔案
+    try:
+        with open(csv_file, "w", encoding="utf-8", newline="") as f:
+            f.write("image_path,label,status\n")
+            for img_path, data in existing_cache.items():
+                label = data.get("label", "[]")
+                status = data.get("status", "pending")
+                # 逸出雙引號
+                safe_label = label.replace('"', '""')
+                f.write(f'{img_path},"{safe_label}",{status}\n')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"儲存自動標註 CSV 失敗: {str(e)}")
+
+@app.post("/api/autolabel/run")
+def run_auto_label(payload: AutoLabelPayload):
+    try:
+        from ultralytics import YOLO
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="系統尚未安裝 ultralytics。請在本機命令提示字元 (CMD) 中執行 pip install ultralytics 以啟用真實的 YOLO 自動推理標註。"
+        )
+        
+    target_dir = Path(payload.target_dir).resolve()
+    if not target_dir.exists():
+        raise HTTPException(status_code=404, detail=f"目標資料夾不存在: {target_dir}")
+        
+    # 解析取得模型權重路徑 (.pt)
+    model_ref = resolve_autolabel_model(payload)
+    
+    # 支持的圖片格式
+    valid_exts = {".jpg", ".jpeg", ".png", ".bmp"}
+    image_files = [
+        p for p in target_dir.rglob("*")
+        if p.suffix.lower() in valid_exts
+    ]
+    
+    if not image_files:
+        raise HTTPException(status_code=400, detail="目標資料夾中找不到任何圖片 (jpg/jpeg/png/bmp)")
+        
+    try:
+        model = YOLO(model_ref)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"載入 YOLO 模型失敗: {str(e)}")
+        
+    label_cache = {}
+    
+    for img_path in image_files:
+        try:
+            results = model.predict(
+                source=str(img_path),
+                conf=payload.confidence,
+                iou=payload.iou,
+                verbose=False
+            )
+        except Exception as e:
+            print(f"[AUTOLABEL] 推論圖片出錯 {img_path.name}: {e}")
+            continue
+            
+        rel_path = img_path.relative_to(target_dir).as_posix()
+        boxes_json = []
+        
+        for r in results:
+            if r.boxes is None:
+                continue
+            img_h, img_w = r.orig_shape
+            for box in r.boxes:
+                cls_id = int(box.cls[0])
+                conf = float(box.conf[0])
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                
+                # 計算相對座標 (0~1)
+                x = x1 / img_w
+                y = y1 / img_h
+                w = (x2 - x1) / img_w
+                h = (y2 - y1) / img_h
+                
+                label_name = model.names.get(cls_id, str(cls_id))
+                
+                boxes_json.append({
+                    "x": round(x, 6),
+                    "y": round(y, 6),
+                    "w": round(w, 6),
+                    "h": round(h, 6),
+                    "label": label_name,
+                    "confidence": round(conf, 4)
+                })
+                
+        # 將標籤快取儲存，狀態設定為 pending (待人工審核)
+        label_cache[rel_path] = {
+            "label": json.dumps(boxes_json, ensure_ascii=False),
+            "status": "pending"
+        }
+        
+    # 合併並儲存至 CSV
+    merge_and_save_labels(target_dir, label_cache)
+    
+    return {
+        "status": "success",
+        "message": f"自動標註推理完成，已處理 {len(image_files)} 張圖片。",
+        "model": model_ref,
+        "target_dir": str(target_dir)
+    }
 
 if __name__ == "__main__":
     import uvicorn

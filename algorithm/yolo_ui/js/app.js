@@ -3848,7 +3848,36 @@ names:
             }
         });
 
-        // 執行自動標註任務按鈕
+        // 智慧自動標註：基底模型來源 change 事件監聽
+        this.on("auto-label-model-source", "change", (e) => {
+            const modelGroup = document.getElementById("auto-label-custom-model-group");
+            if (modelGroup) {
+                modelGroup.style.display = e.target.value === "custom_path" ? "block" : "none";
+            }
+        });
+
+        // 智慧自動標註：選擇自訂模型路徑按鈕
+        this.on("btn-auto-label-choose-model", "click", async () => {
+            try {
+                const res = await API.chooseFile();
+                if (res && res.status === "success" && res.path) {
+                    this.value("auto-label-model-path", res.path);
+                    showToast(`已選擇自訂模型: ${res.path}`, "success");
+                }
+            } catch (err) {
+                showToast(`選擇檔案失敗: ${err.message}`, "error");
+            }
+        });
+
+        // 智慧自動標註：信心度 slider 拖曳值即時更新
+        this.on("auto-label-confidence", "input", (e) => {
+            const valEl = document.getElementById("auto-label-confidence-val");
+            if (valEl) {
+                valEl.textContent = e.target.value;
+            }
+        });
+
+        // 執行自動標註任務按鈕 (調用真實 YOLO 推理 API)
         this.on("btn-run-autolabel", "click", async () => {
             const dirInput = document.getElementById("auto-label-path-display");
             let dirPath = dirInput ? dirInput.value.trim() : "";
@@ -3870,6 +3899,15 @@ names:
                 return;
             }
 
+            const modelSource = document.getElementById("auto-label-model-source")?.value || "project_best";
+            const modelPath = document.getElementById("auto-label-model-path")?.value.trim() || "";
+            const confidence = parseFloat(document.getElementById("auto-label-confidence")?.value || "0.75");
+
+            if (modelSource === "custom_path" && !modelPath) {
+                showToast("請選擇自訂模型權重路徑！", "warn");
+                return;
+            }
+
             const btn = document.getElementById("btn-run-autolabel");
             if (!btn) return;
             
@@ -3879,55 +3917,24 @@ names:
 
             showToast("正在啟動背景 YOLO 自動標註推理...", "info");
 
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-                progress += 20;
-                if (progress <= 100) {
-                    showToast(`自動標註推理進度: ${progress}%`, "info");
-                    const processedEl = document.getElementById("card-auto-processed");
-                    if (processedEl) {
-                        const totalImgs = this.images.length;
-                        const processedCount = Math.min(totalImgs, Math.round((progress / 100) * totalImgs));
-                        processedEl.textContent = `${processedCount} / ${totalImgs}`;
-                    }
-                }
-            }, 400);
-
-            setTimeout(async () => {
-                clearInterval(progressInterval);
-                try {
-                    this.images.forEach(img => {
-                        const cache = this.labelDataCache[img.path] || { label: "", status: "pending" };
-                        
-                        if (!cache.label || cache.label === "[]") {
-                            const randomClass = this.classes.length > 0 ? this.classes[Math.floor(Math.random() * this.classes.length)] : "cat";
-                            const mockBbox = [
-                                {
-                                    x: parseFloat((0.15 + Math.random() * 0.3).toFixed(3)),
-                                    y: parseFloat((0.15 + Math.random() * 0.3).toFixed(3)),
-                                    w: parseFloat((0.25 + Math.random() * 0.3).toFixed(3)),
-                                    h: parseFloat((0.25 + Math.random() * 0.3).toFixed(3)),
-                                    label: randomClass
-                                }
-                            ];
-                            cache.label = JSON.stringify(mockBbox);
-                        }
-                        
-                        cache.status = "pending";
-                        this.labelDataCache[img.path] = cache;
-                    });
-
-                    await API.saveLabels(this.labelDataCache);
-                    showToast("自動標註推理完成！本機 labels.csv 存檔成功！", "success");
-                    await this.scanDataset();
-                    showToast("已成功載入候選樣本，請點擊「資料分析」前往審核修正標記框位置。", "success");
-                } catch (err) {
-                    showToast(`自動標註執行失敗: ${err.message}`, "error");
-                } finally {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-            }, 2200);
+            try {
+                const payload = {
+                    target_dir: dirPath,
+                    model_source: modelSource,
+                    model_path: modelPath,
+                    confidence: confidence,
+                    iou: 0.5
+                };
+                const res = await API.runAutoLabel(payload);
+                showToast(res.message || "自動標註完成！", "success");
+                await this.scanDataset();
+                showToast("已成功載入候選樣本，請點擊「資料分析」前往審核修正標記框位置。", "success");
+            } catch (err) {
+                showToast(`自動標註執行失敗: ${err.message}`, "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
         });
 
         // 初始化渲染

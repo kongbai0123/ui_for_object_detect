@@ -21,6 +21,10 @@ const API = {
         return this._get("/api/project/choose_directory");
     },
 
+    async chooseFile() {
+        return this._get("/api/project/choose_file");
+    },
+
     async listProjects() {
         return this._get("/api/projects/list");
     },
@@ -67,6 +71,10 @@ const API = {
         return this._get("/api/models/list");
     },
 
+    async getModelRegistry() {
+        return this._get("/api/models/registry");
+    },
+
     async tagModel(modelPath, stage) {
         return this._post("/api/models/tag", {
             model_path: modelPath,
@@ -107,6 +115,10 @@ const API = {
     // 標籤管理
     async saveLabels(payload) {
         return this._post("/api/labels/save", payload);
+    },
+
+    async runAutoLabel(payload) {
+        return this._post("/api/autolabel/run", payload);
     },
 
     // 訓練管理
