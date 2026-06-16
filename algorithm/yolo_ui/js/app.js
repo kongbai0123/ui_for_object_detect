@@ -4601,6 +4601,108 @@ names:
         }
     },
 
+    renderAutoLabelResultReport(status) {
+        const reportPanel = document.getElementById("autolabel-result-report");
+        if (!reportPanel) return;
+
+        reportPanel.style.display = "block";
+
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = val;
+        };
+
+        const totalBoxes = status.total_boxes || 0;
+        const detectedImages = status.detected_images || 0;
+        const emptyImages = status.empty_images || 0;
+        const processed = status.processed || 0;
+
+        setVal("result-processed", processed);
+        setVal("result-detected", detectedImages);
+        setVal("result-empty", emptyImages);
+        setVal("result-boxes", totalBoxes);
+
+        const isSegment = status.task_type === "segment";
+        const labelTerm = isSegment ? "候選遮罩總數" : "候選框總數";
+        const imageTerm = isSegment ? "有遮罩圖片" : "有框圖片";
+        const emptyTerm = isSegment ? "無遮罩圖片" : "無框圖片";
+
+        // 動態更新卡片的標題文字
+        const reportGrid = reportPanel.querySelector(".result-grid");
+        if (reportGrid) {
+            const cards = reportGrid.querySelectorAll(".result-card");
+            if (cards.length >= 4) {
+                const detectedSpan = cards[1].querySelector("span");
+                if (detectedSpan) detectedSpan.textContent = imageTerm;
+
+                const emptySpan = cards[2].querySelector("span");
+                if (emptySpan) emptySpan.textContent = emptyTerm;
+
+                const boxesSpan = cards[3].querySelector("span");
+                if (boxesSpan) boxesSpan.textContent = labelTerm;
+            }
+        }
+
+        // 類別分布
+        const distEl = document.getElementById("autolabel-class-distribution");
+        const adviceEl = document.getElementById("autolabel-result-advice");
+        
+        if (distEl) distEl.innerHTML = "";
+        if (adviceEl) adviceEl.innerHTML = "";
+
+        if (totalBoxes > 0 && distEl) {
+            let classDistributionHtml = `<strong style="display: block; margin-bottom: 8px; color: var(--text-primary);">${isSegment ? '偵測遮罩類別分布' : '偵測類別分布'}：</strong><div style="display: flex; flex-wrap: wrap; gap: 8px;">`;
+            for (const [cls, count] of Object.entries(status.class_counts || {})) {
+                classDistributionHtml += `<span style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 4px 8px; border-radius: 6px; font-size: 11px; color: var(--neon-blue); font-weight: bold;">${cls}: ${count} 個</span>`;
+            }
+            classDistributionHtml += '</div>';
+            distEl.innerHTML = classDistributionHtml;
+        }
+
+        // 若完全沒有偵測到任何框
+        if (totalBoxes === 0 && adviceEl) {
+            const warningTitle = isSegment ? "無候選遮罩產生" : "無候選標註框產生";
+            const warningDesc = isSegment
+                ? "本次自動標註完成，但完全沒有偵測到任何遮罩。這通常是由於 <b>Confidence (信心度) 閾值設得過高</b>，或者模型權重與當前影像類別不匹配。<br>建議將 Confidence 下調至 0.25 ~ 0.35 重試，或更換模型。"
+                : "本次自動標註完成，但完全沒有偵測到任何標籤。這通常是由於 <b>Confidence (信心度) 閾值設得過高</b>，或者模型權重與當前影像類別不匹配。<br>建議將 Confidence 下調至 0.25 ~ 0.35 重試，或更換模型。";
+
+            adviceEl.innerHTML = `
+                <div class="guide-warning-item warn" style="display: flex; align-items: flex-start; gap: 10px; background: rgba(241, 196, 15, 0.08); border: 1px solid rgba(241, 196, 15, 0.2); padding: 12px; border-radius: 8px; color: var(--text-primary); margin-bottom: 12px;">
+                    <i class="fa-solid fa-triangle-exclamation" style="color: #f1c40f; margin-top: 3px; font-size: 15px;"></i>
+                    <div style="flex: 1;">
+                        <strong style="display: block; font-size: 13px; color: #f1c40f; margin-bottom: 4px;">${warningTitle}</strong>
+                        <span style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
+                            ${warningDesc}
+                        </span>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary btn-sm" id="btn-autolabel-lower-conf" style="font-weight: bold; border-color: #f1c40f; color: #f1c40f; padding: 6px 12px; border-radius: 6px; background: rgba(241, 196, 15, 0.05); cursor: pointer;"><i class="fa-solid fa-arrows-down-to-line"></i> 將 Confidence 調整為 0.35 並重試</button>
+                </div>
+            `;
+
+            // 綁定「調整 Confidence 並重試」按鈕
+            const lowerConfBtn = document.getElementById("btn-autolabel-lower-conf");
+            if (lowerConfBtn) {
+                lowerConfBtn.addEventListener("click", () => {
+                    const confInput = document.getElementById("auto-label-confidence");
+                    const confValText = document.getElementById("auto-label-confidence-val");
+                    if (confInput) {
+                        confInput.value = 0.35;
+                        if (confValText) confValText.textContent = "0.35";
+                        
+                        // 隱藏結果面板，並自動點擊「執行自動標註任務」重跑
+                        reportPanel.style.display = "none";
+                        const runBtn = document.getElementById("btn-run-autolabel");
+                        if (runBtn) {
+                            runBtn.click();
+                        }
+                    }
+                });
+            }
+        }
+    },
+
     async renderLabelVersions() {
         if (!this.projectLoaded) return;
 
@@ -4841,82 +4943,7 @@ names:
         showToast("已離開候選審核模式", "info");
     },
 
-    renderAutoLabelResultReport(status) {
-        const reportPanel = document.getElementById("autolabel-result-report");
-        if (!reportPanel) return;
 
-        reportPanel.style.display = "block";
-
-        const setVal = (id, val) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = val;
-        };
-
-        const totalBoxes = status.total_boxes || 0;
-        const detectedImages = status.detected_images || 0;
-        const emptyImages = status.empty_images || 0;
-        const processed = status.processed || 0;
-
-        setVal("result-processed", processed);
-        setVal("result-detected", detectedImages);
-        setVal("result-empty", emptyImages);
-        setVal("result-boxes", totalBoxes);
-
-        // 類別分布
-        const distEl = document.getElementById("autolabel-class-distribution");
-        const adviceEl = document.getElementById("autolabel-result-advice");
-        
-        if (distEl) distEl.innerHTML = "";
-        if (adviceEl) adviceEl.innerHTML = "";
-
-        if (totalBoxes > 0 && distEl) {
-            let classDistributionHtml = '<strong style="display: block; margin-bottom: 8px; color: var(--text-primary);">偵測類別分布：</strong><div style="display: flex; flex-wrap: wrap; gap: 8px;">';
-            for (const [cls, count] of Object.entries(status.class_counts || {})) {
-                classDistributionHtml += `<span style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 4px 8px; border-radius: 6px; font-size: 11px; color: var(--neon-blue); font-weight: bold;">${cls}: ${count} 個</span>`;
-            }
-            classDistributionHtml += '</div>';
-            distEl.innerHTML = classDistributionHtml;
-        }
-
-        // 若完全沒有偵測到任何框
-        if (totalBoxes === 0 && adviceEl) {
-            adviceEl.innerHTML = `
-                <div class="guide-warning-item warn" style="display: flex; align-items: flex-start; gap: 10px; background: rgba(241, 196, 15, 0.08); border: 1px solid rgba(241, 196, 15, 0.2); padding: 12px; border-radius: 8px; color: var(--text-primary); margin-bottom: 12px;">
-                    <i class="fa-solid fa-triangle-exclamation" style="color: #f1c40f; margin-top: 3px; font-size: 15px;"></i>
-                    <div style="flex: 1;">
-                        <strong style="display: block; font-size: 13px; color: #f1c40f; margin-bottom: 4px;">無候選標註框產生</strong>
-                        <span style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
-                            本次自動標註完成，但完全沒有偵測到任何標籤。這通常是由於 <b>Confidence (信心度) 閾值設得過高</b>，或者模型權重與當前影像類別不匹配。<br>
-                            建議將 Confidence 下調至 0.25 ~ 0.35 重試，或更換模型。
-                        </span>
-                    </div>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-secondary btn-sm" id="btn-autolabel-lower-conf" style="font-weight: bold; border-color: #f1c40f; color: #f1c40f; padding: 6px 12px; border-radius: 6px; background: rgba(241, 196, 15, 0.05); cursor: pointer;"><i class="fa-solid fa-arrows-down-to-line"></i> 將 Confidence 調整為 0.35 並重試</button>
-                </div>
-            `;
-
-            // 綁定「調整 Confidence 並重試」按鈕
-            const lowerConfBtn = document.getElementById("btn-autolabel-lower-conf");
-            if (lowerConfBtn) {
-                lowerConfBtn.addEventListener("click", () => {
-                    const confInput = document.getElementById("auto-label-confidence");
-                    const confValText = document.getElementById("auto-label-confidence-val");
-                    if (confInput) {
-                        confInput.value = 0.35;
-                        if (confValText) confValText.textContent = "0.35";
-                        
-                        // 隱藏結果面板，並自動點擊「執行自動標註任務」重跑
-                        reportPanel.style.display = "none";
-                        const runBtn = document.getElementById("btn-run-autolabel");
-                        if (runBtn) {
-                            runBtn.click();
-                        }
-                    }
-                });
-            }
-        }
-    }
 };
 
 // 網頁加載後啟動

@@ -1,6 +1,9 @@
 import os
 import sys
 import json
+import csv
+import sys
+csv.field_size_limit(10 * 1024 * 1024)
 import time
 import uuid
 import shutil
@@ -1819,6 +1822,7 @@ def run_auto_label_worker(task_id: str, payload: AutoLabelPayload):
 
     try:
         model = YOLO(model_ref)
+        task["task_type"] = getattr(model, "task", "detect")
     except Exception as e:
         task["status"] = "error"
         task["error"] = f"載入 YOLO 模型失敗: {str(e)}"
@@ -1856,23 +1860,44 @@ def run_auto_label_worker(task_id: str, payload: AutoLabelPayload):
             continue
 
         boxes_json = []
-        for r in results:
-            if r.boxes is None:
-                continue
-            img_h, img_w = r.orig_shape
-            for box in r.boxes:
-                cls_id = int(box.cls[0])
-                conf_val = float(box.conf[0])
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                label_name = model.names.get(cls_id, str(cls_id))
-                boxes_json.append({
-                    "x": round(x1 / img_w, 6),
-                    "y": round(y1 / img_h, 6),
-                    "w": round((x2 - x1) / img_w, 6),
-                    "h": round((y2 - y1) / img_h, 6),
-                    "label": label_name,
-                    "confidence": round(conf_val, 4)
-                })
+        is_segment = getattr(model, "task", "detect") == "segment"
+
+        if is_segment and any(r.masks is not None for r in results):
+            for r in results:
+                if r.masks is None:
+                    continue
+                img_h, img_w = r.orig_shape
+                for i, xyn in enumerate(r.masks.xyn):
+                    cls_id = int(r.boxes.cls[i])
+                    conf_val = float(r.boxes.conf[i])
+                    label_name = model.names.get(cls_id, str(cls_id))
+                    
+                    points = [[round(float(pt[0]), 6), round(float(pt[1]), 6)] for pt in xyn.tolist()]
+                    if len(points) > 2:
+                        boxes_json.append({
+                            "type": "polygon",
+                            "points": points,
+                            "label": label_name,
+                            "confidence": round(conf_val, 4)
+                        })
+        else:
+            for r in results:
+                if r.boxes is None:
+                    continue
+                img_h, img_w = r.orig_shape
+                for box in r.boxes:
+                    cls_id = int(box.cls[0])
+                    conf_val = float(box.conf[0])
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    label_name = model.names.get(cls_id, str(cls_id))
+                    boxes_json.append({
+                        "x": round(x1 / img_w, 6),
+                        "y": round(y1 / img_h, 6),
+                        "w": round((x2 - x1) / img_w, 6),
+                        "h": round((y2 - y1) / img_h, 6),
+                        "label": label_name,
+                        "confidence": round(conf_val, 4)
+                    })
 
         label_cache[rel_path] = {
             "label": json.dumps(boxes_json, ensure_ascii=False),
@@ -1927,6 +1952,7 @@ def start_auto_label(payload: AutoLabelPayload):
     autolabel_tasks[task_id] = {
         "task_id": task_id,
         "status": "running",
+        "task_type": "detect",
         "total": 0,
         "processed": 0,
         "success": 0,

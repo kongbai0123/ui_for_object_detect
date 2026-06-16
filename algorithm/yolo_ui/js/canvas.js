@@ -174,17 +174,36 @@ const ImageLabeler = {
                 this.currentX = mouseRel.x;
                 this.currentY = mouseRel.y;
             } else { // 選擇模式
-                // 檢查是否點擊在現有的 Box 內部，由小到大排序 (優先選取小框)
+                // 檢查是否點擊在現有的 Box / Polygon 內部，由小到大排序 (優先選取小物件)
                 let clickedIdx = -1;
                 let minArea = Infinity;
                 
                 this.bboxes.forEach((box, idx) => {
-                    if (mouseRel.x >= box.x && mouseRel.x <= box.x + box.w &&
-                        mouseRel.y >= box.y && mouseRel.y <= box.y + box.h) {
-                        const area = box.w * box.h;
-                        if (area < minArea) {
-                            minArea = area;
-                            clickedIdx = idx;
+                    const isPolygon = box.type === "polygon" || !!box.points;
+                    if (isPolygon) {
+                        if (!box.points || box.points.length === 0) return;
+                        const xs = box.points.map(pt => pt[0]);
+                        const ys = box.points.map(pt => pt[1]);
+                        const minX = Math.min(...xs);
+                        const maxX = Math.max(...xs);
+                        const minY = Math.min(...ys);
+                        const maxY = Math.max(...ys);
+                        if (mouseRel.x >= minX && mouseRel.x <= maxX &&
+                            mouseRel.y >= minY && mouseRel.y <= maxY) {
+                            const area = (maxX - minX) * (maxY - minY);
+                            if (area < minArea) {
+                                minArea = area;
+                                clickedIdx = idx;
+                            }
+                        }
+                    } else {
+                        if (mouseRel.x >= box.x && mouseRel.x <= box.x + box.w &&
+                            mouseRel.y >= box.y && mouseRel.y <= box.y + box.h) {
+                            const area = box.w * box.h;
+                            if (area < minArea) {
+                                minArea = area;
+                                clickedIdx = idx;
+                            }
                         }
                     }
                 });
@@ -192,8 +211,16 @@ const ImageLabeler = {
                 this.selectedBoxIndex = clickedIdx;
                 if (clickedIdx !== -1) {
                     this.isDraggingBox = true;
-                    this.dragOffsetX = mouseRel.x - this.bboxes[clickedIdx].x;
-                    this.dragOffsetY = mouseRel.y - this.bboxes[clickedIdx].y;
+                    const box = this.bboxes[clickedIdx];
+                    const isPolygon = box.type === "polygon" || !!box.points;
+                    if (isPolygon) {
+                        this.dragStartPoints = JSON.parse(JSON.stringify(box.points));
+                        this.dragStartMouseX = mouseRel.x;
+                        this.dragStartMouseY = mouseRel.y;
+                    } else {
+                        this.dragOffsetX = mouseRel.x - box.x;
+                        this.dragOffsetY = mouseRel.y - box.y;
+                    }
                 }
                 this.updateBBoxList();
                 this.draw();
@@ -218,17 +245,25 @@ const ImageLabeler = {
         if (this.isDraggingBox && this.selectedBoxIndex !== -1) {
             const mouseRel = this.getRelativeCoordinates(e.clientX, e.clientY);
             const box = this.bboxes[this.selectedBoxIndex];
-            let newX = mouseRel.x - this.dragOffsetX;
-            let newY = mouseRel.y - this.dragOffsetY;
-            
-            // 邊界限制
-            if (newX < 0) newX = 0;
-            if (newY < 0) newY = 0;
-            if (newX + box.w > 1.0) newX = 1.0 - box.w;
-            if (newY + box.h > 1.0) newY = 1.0 - box.h;
-            
-            box.x = newX;
-            box.y = newY;
+            const isPolygon = box.type === "polygon" || !!box.points;
+
+            if (isPolygon) {
+                const dx = mouseRel.x - this.dragStartMouseX;
+                const dy = mouseRel.y - this.dragStartMouseY;
+                box.points = this.dragStartPoints.map(pt => [pt[0] + dx, pt[1] + dy]);
+            } else {
+                let newX = mouseRel.x - this.dragOffsetX;
+                let newY = mouseRel.y - this.dragOffsetY;
+                
+                // 邊界限制
+                if (newX < 0) newX = 0;
+                if (newY < 0) newY = 0;
+                if (newX + box.w > 1.0) newX = 1.0 - box.w;
+                if (newY + box.h > 1.0) newY = 1.0 - box.h;
+                
+                box.x = newX;
+                box.y = newY;
+            }
             
             this.draw();
             return;
@@ -255,10 +290,26 @@ const ImageLabeler = {
             let hovering = false;
             for (let i = 0; i < this.bboxes.length; i++) {
                 const box = this.bboxes[i];
-                if (mouseRel.x >= box.x && mouseRel.x <= box.x + box.w &&
-                    mouseRel.y >= box.y && mouseRel.y <= box.y + box.h) {
-                    hovering = true;
-                    break;
+                const isPolygon = box.type === "polygon" || !!box.points;
+                if (isPolygon) {
+                    if (!box.points || box.points.length === 0) continue;
+                    const xs = box.points.map(pt => pt[0]);
+                    const ys = box.points.map(pt => pt[1]);
+                    const minX = Math.min(...xs);
+                    const maxX = Math.max(...xs);
+                    const minY = Math.min(...ys);
+                    const maxY = Math.max(...ys);
+                    if (mouseRel.x >= minX && mouseRel.x <= maxX &&
+                        mouseRel.y >= minY && mouseRel.y <= maxY) {
+                        hovering = true;
+                        break;
+                    }
+                } else {
+                    if (mouseRel.x >= box.x && mouseRel.x <= box.x + box.w &&
+                        mouseRel.y >= box.y && mouseRel.y <= box.y + box.h) {
+                        hovering = true;
+                        break;
+                    }
                 }
             }
             this.canvas.style.cursor = hovering ? "move" : "default";
@@ -365,45 +416,96 @@ const ImageLabeler = {
         const drawH = this.img.naturalHeight * this.scale;
         this.ctx.drawImage(this.img, this.panX, this.panY, drawW, drawH);
         
-        // 2. 繪製已存在的 Bounding Box
+        // 2. 繪製已存在的 Bounding Box 或 Polygon
         this.bboxes.forEach((box, idx) => {
-            const p1 = this.getCanvasCoordinates(box.x, box.y);
-            const p2 = this.getCanvasCoordinates(box.x + box.w, box.y + box.h);
-            const w = p2.x - p1.x;
-            const h = p2.y - p1.y;
-            
             const isSelected = idx === this.selectedBoxIndex;
             const color = this.classColors[box.label] || "var(--neon-blue)";
-            
-            // 繪製半透明填充
-            this.ctx.fillStyle = isSelected ? "rgba(0, 229, 255, 0.12)" : "rgba(255, 255, 255, 0.03)";
-            this.ctx.fillRect(p1.x, p1.y, w, h);
-            
-            // 繪製邊框與發光特效
-            if (isSelected) {
-                this.ctx.shadowBlur = 6;
-                this.ctx.shadowColor = color;
-            } else {
-                this.ctx.shadowBlur = 0;
-            }
+            const isPolygon = box.type === "polygon" || !!box.points;
 
-            this.ctx.strokeStyle = color;
-            this.ctx.lineWidth = isSelected ? 2 : 1.2;
-            this.ctx.setLineDash([]); // 全改為實線
-            this.ctx.strokeRect(p1.x, p1.y, w, h);
-            
-            // 重設發光屬性
-            this.ctx.shadowBlur = 0;
-            
-            // 繪製標籤名稱底色與文字
-            this.ctx.fillStyle = color;
-            this.ctx.font = "bold 12px Outfit, sans-serif";
-            const textWidth = this.ctx.measureText(box.label).width;
-            
-            // 標籤放置在左上角頂部
-            this.ctx.fillRect(p1.x - 1, p1.y - 18, textWidth + 12, 18);
-            this.ctx.fillStyle = "#000";
-            this.ctx.fillText(box.label, p1.x + 6, p1.y - 5);
+            if (isPolygon) {
+                if (!box.points || box.points.length === 0) return;
+                
+                this.ctx.beginPath();
+                box.points.forEach((pt, pIdx) => {
+                    const canvasPt = this.getCanvasCoordinates(pt[0], pt[1]);
+                    if (pIdx === 0) {
+                        this.ctx.moveTo(canvasPt.x, canvasPt.y);
+                    } else {
+                        this.ctx.lineTo(canvasPt.x, canvasPt.y);
+                    }
+                });
+                this.ctx.closePath();
+
+                // 填滿 HSL 透明顏色
+                if (color.startsWith("hsl")) {
+                    this.ctx.fillStyle = isSelected 
+                        ? color.replace(")", ", 0.35)").replace("hsl", "hsla")
+                        : color.replace(")", ", 0.18)").replace("hsl", "hsla");
+                } else {
+                    this.ctx.fillStyle = isSelected ? "rgba(0, 229, 255, 0.2)" : "rgba(0, 229, 255, 0.08)";
+                }
+                this.ctx.fill();
+
+                // 繪製發光效果
+                if (isSelected) {
+                    this.ctx.shadowBlur = 6;
+                    this.ctx.shadowColor = color;
+                } else {
+                    this.ctx.shadowBlur = 0;
+                }
+
+                this.ctx.strokeStyle = color;
+                this.ctx.lineWidth = isSelected ? 2.5 : 1.5;
+                this.ctx.setLineDash([]);
+                this.ctx.stroke();
+
+                // 重置發光
+                this.ctx.shadowBlur = 0;
+
+                // 繪製標籤名稱
+                const firstPt = this.getCanvasCoordinates(box.points[0][0], box.points[0][1]);
+                this.ctx.fillStyle = color;
+                this.ctx.font = "bold 12px Outfit, sans-serif";
+                const textWidth = this.ctx.measureText(box.label).width;
+                this.ctx.fillRect(firstPt.x - 1, firstPt.y - 18, textWidth + 12, 18);
+                this.ctx.fillStyle = "#000";
+                this.ctx.fillText(box.label, firstPt.x + 6, firstPt.y - 5);
+            } else {
+                const p1 = this.getCanvasCoordinates(box.x, box.y);
+                const p2 = this.getCanvasCoordinates(box.x + box.w, box.y + box.h);
+                const w = p2.x - p1.x;
+                const h = p2.y - p1.y;
+
+                // 繪製半透明填充
+                this.ctx.fillStyle = isSelected ? "rgba(0, 229, 255, 0.12)" : "rgba(255, 255, 255, 0.03)";
+                this.ctx.fillRect(p1.x, p1.y, w, h);
+                
+                // 繪製邊框與發光特效
+                if (isSelected) {
+                    this.ctx.shadowBlur = 6;
+                    this.ctx.shadowColor = color;
+                } else {
+                    this.ctx.shadowBlur = 0;
+                }
+
+                this.ctx.strokeStyle = color;
+                this.ctx.lineWidth = isSelected ? 2 : 1.2;
+                this.ctx.setLineDash([]); // 全改為實線
+                this.ctx.strokeRect(p1.x, p1.y, w, h);
+                
+                // 重設發光屬性
+                this.ctx.shadowBlur = 0;
+                
+                // 繪製標籤名稱底色與文字
+                this.ctx.fillStyle = color;
+                this.ctx.font = "bold 12px Outfit, sans-serif";
+                const textWidth = this.ctx.measureText(box.label).width;
+                
+                // 標籤放置在左上角頂部
+                this.ctx.fillRect(p1.x - 1, p1.y - 18, textWidth + 12, 18);
+                this.ctx.fillStyle = "#000";
+                this.ctx.fillText(box.label, p1.x + 6, p1.y - 5);
+            }
         });
         
         // 3. 繪製正在拖曳中的矩形
@@ -442,11 +544,16 @@ const ImageLabeler = {
             
             const color = this.classColors[box.label] || "var(--neon-blue)";
             
+            const isPolygon = box.type === "polygon" || !!box.points;
+            const coordStr = isPolygon 
+                ? `[polygon, pts:${box.points.length}]`
+                : `[x:${box.x.toFixed(2)}, y:${box.y.toFixed(2)}]`;
+
             item.innerHTML = `
                 <div class="bbox-info">
                     <span class="class-tag-color" style="background: ${color};"></span>
                     <strong>${box.label}</strong>
-                    <span style="color: var(--text-muted); font-size: 0.65rem;">[x:${box.x.toFixed(2)}, y:${box.y.toFixed(2)}]</span>
+                    <span style="color: var(--text-muted); font-size: 0.65rem;">${coordStr}</span>
                 </div>
                 <button class="btn-delete-box" data-idx="${idx}" title="刪除"><i class="fa-solid fa-trash-can"></i></button>
             `;
