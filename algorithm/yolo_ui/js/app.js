@@ -182,6 +182,9 @@ const App = {
 
         // 2. 初始化專案對話框
         this.safeSetup("setupProjectModals", () => this.setupProjectModals());
+        
+        // 2.5. 初始化 Session 事件
+        this.safeSetup("setupSessionEvents", () => this.setupSessionEvents());
 
         // 3. 初始化資料頁面事件
         this.safeSetup("setupDataPageEvents", () => this.setupDataPageEvents());
@@ -760,6 +763,7 @@ const App = {
         this.projectName = project.project_name || "DefaultProject";
         this.inputPath = project.input_path || "C:/yolo";
         this.classes = project.classes || [];
+        this.taskType = project.task_type || "Detection";
 
         // 更新 UI 頂部與 Badge
         this.html("active-project-badge", `
@@ -4809,7 +4813,7 @@ names:
     },
 
     enableReviewEditorUi() {
-        const bar = document.getElementById("review-editor-bar");
+        const bar = document.getElementById("review-toolbar");
         if (bar) {
             bar.style.display = this.reviewMode ? "flex" : "none";
         }
@@ -4940,7 +4944,263 @@ names:
         showToast("已離開候選審核模式", "info");
     },
 
+    // ==========================================================================
+    // Session 儲存/載入與開新檔
+    // ==========================================================================
+    setupSessionEvents() {
+        this.bindClick("btn-studio-new-session", () => this.newSession());
+        this.bindClick("btn-studio-open-session", () => this.openSession());
+        this.bindClick("btn-studio-save-session", () => this.saveSession());
+    },
 
+    async newSession() {
+        if (this.projectLoaded) {
+            if (!confirm("確定要建立新檔嗎？未儲存的變更將會遺失。")) {
+                return;
+            }
+        }
+        try {
+            await API.closeProject();
+            this.projectLoaded = false;
+            this.projectName = "";
+            this.inputPath = "";
+            this.classes = [];
+            this.images = [];
+            this.currentImgIndex = -1;
+            this.labelDataCache = {};
+            this.reviewMode = false;
+            this.reviewQueue = [];
+            this.currentReviewIndex = -1;
+            
+            // 隱藏 review-toolbar
+            this.enableReviewEditorUi();
+            
+            this.resetUiToEmptyState();
+            showToast("已重置 Vision Training Studio 狀態 (開啟新檔)", "success");
+            this.switchView("database-view");
+        } catch (err) {
+            showToast(`重置專案失敗: ${err.message}`, "error");
+        }
+    },
+
+    buildStudioSessionPayload() {
+        // 抓取劃分比例
+        const trainRatio = parseFloat(document.getElementById("slider-train")?.value || 70) / 100;
+        const valRatio = parseFloat(document.getElementById("slider-val")?.value || 20) / 100;
+        const testRatio = parseFloat(document.getElementById("slider-test")?.value || 10) / 100;
+
+        // 抓取當前分頁與標籤頁
+        let activeView = "database-view";
+        let activeTab = "db-manage";
+        document.querySelectorAll(".app-view").forEach(v => {
+            if (v.classList.contains("active")) {
+                activeView = v.id;
+                const activeLi = v.querySelector(".sidebar-menu li.active");
+                if (activeLi) {
+                    activeTab = activeLi.getAttribute("data-tab");
+                }
+            }
+        });
+
+        const autoLabelModelSource = document.getElementById("auto-label-model-source")?.value || "custom_path";
+        const autoLabelModelPath = document.getElementById("auto-label-model-path")?.value || "";
+        const autoLabelConf = parseFloat(document.getElementById("auto-label-confidence")?.value || 0.75);
+        const autoLabelIou = parseFloat(document.getElementById("auto-label-iou")?.value || 0.5);
+
+        const trainModel = document.getElementById("train-model")?.value || "yolo11n";
+        const trainEpochs = parseInt(document.getElementById("train-epochs")?.value || 50, 10);
+        const trainBatch = parseInt(document.getElementById("train-batch")?.value || 16, 10);
+
+        return {
+            schema_version: "1.0",
+            project_name: this.projectName,
+            task_type: this.taskType || "Detection",
+            annotation_type: (this.taskType === "Segmentation" || this.taskType === "segmentation") ? "polygon" : "bbox",
+            input_path: this.inputPath,
+            output_path: document.getElementById("output-path-display")?.value || (this.inputPath ? `${this.inputPath}/runs` : ""),
+            classes: this.classes,
+            current_view: activeView,
+            current_tab: activeTab,
+            current_image_index: this.currentImgIndex,
+            autolabel: {
+                model_source: autoLabelModelSource,
+                model_path: autoLabelModelPath,
+                confidence: autoLabelConf,
+                iou: autoLabelIou
+            },
+            training: {
+                model_id: trainModel,
+                epochs: trainEpochs,
+                batch: trainBatch
+            },
+            dataset_split: {
+                train: trainRatio,
+                val: valRatio,
+                test: testRatio
+            }
+        };
+    },
+
+    async saveSession() {
+        if (!this.projectLoaded) {
+            showToast("目前未載入專案，請先載入或建立專案再儲存。", "warn");
+            return;
+        }
+
+        // 儲存當前影像標註
+        if (this.currentImgIndex >= 0 && typeof ImageLabeler !== "undefined" && ImageLabeler.getLabelString) {
+            const labelStr = ImageLabeler.getLabelString();
+            const img = this.images[this.currentImgIndex];
+            if (img) {
+                this.labelDataCache[img.path] = {
+                    label: labelStr,
+                    status: img.status || "done"
+                };
+            }
+        }
+        
+        // 寫入 labelDataCache 至 labels.csv
+        try {
+            await API.saveLabels(this.labelDataCache);
+        } catch (err) {
+            console.warn("自動儲存當前標籤至 labels.csv 失敗:", err);
+        }
+
+        const sessionPayload = this.buildStudioSessionPayload();
+
+        // 決定是否彈出另存 dialog
+        let chooseFileRes = null;
+        if (confirm("是否要另存新檔？(按取消將直接存至專案目錄的 studio_session.vtsproj.json)")) {
+            chooseFileRes = await API.chooseSaveSessionFile();
+            if (chooseFileRes.status === "cancelled" || !chooseFileRes.path) {
+                showToast("已取消另存紀錄檔。", "info");
+                return;
+            }
+        }
+
+        const filepath = chooseFileRes ? chooseFileRes.path : null;
+
+        try {
+            const res = await API.saveStudioSession(sessionPayload, filepath);
+            if (res.status === "success") {
+                showToast(res.message || "Session 儲存成功！", "success");
+            }
+        } catch (err) {
+            showToast(`儲存 Session 失敗: ${err.message}`, "error");
+        }
+    },
+
+    async openSession() {
+        if (this.projectLoaded) {
+            if (!confirm("確定要載入其他紀錄檔嗎？當前未儲存的工作狀態將會遺失。")) {
+                return;
+            }
+        }
+
+        try {
+            const chooseRes = await API.chooseOpenSessionFile();
+            if (chooseRes.status === "cancelled" || !chooseRes.path) {
+                return;
+            }
+
+            const res = await API.openStudioSession(chooseRes.path);
+            if (res.status === "success") {
+                const session = res.session_data;
+                const project = res.active_project;
+                
+                // 還原專案狀態
+                this.projectLoaded = true;
+                this.projectName = project.project_name;
+                this.inputPath = project.input_path;
+                this.classes = project.classes;
+                this.taskType = project.task_type || "Detection";
+
+                // 更新頂部專案 Badge
+                this.html("active-project-badge", `
+                    <span class="dot active"></span> Project: ${this.projectName}
+                `);
+                this.value("input-path-display", this.inputPath);
+                this.value("output-path-display", project.output_path || `${this.inputPath}/runs`);
+                this.value("label-input-path-display", this.inputPath);
+                this.value("auto-label-path-display", this.inputPath);
+
+                const canvas = this.el("label-canvas");
+                const canvasContainer = this.el("canvas-container-div");
+
+                if (canvas && canvasContainer && window.ImageLabeler) {
+                    ImageLabeler.init("label-canvas", "canvas-container-div");
+                    ImageLabeler.setClassColors(this.classes);
+                }
+
+                this.enableTabs();
+
+                // 恢復其他參數
+                if (session.autolabel) {
+                    this.value("auto-label-model-source", session.autolabel.model_source || "custom_path");
+                    this.value("auto-label-model-path", session.autolabel.model_path || "");
+                    this.value("auto-label-confidence", session.autolabel.confidence || 0.75);
+                    const confValEl = document.getElementById("auto-label-confidence-val");
+                    if (confValEl) confValEl.textContent = (session.autolabel.confidence || 0.75).toFixed(2);
+                    
+                    this.value("auto-label-iou", session.autolabel.iou || 0.5);
+                    const iouValEl = document.getElementById("auto-label-iou-val");
+                    if (iouValEl) iouValEl.textContent = (session.autolabel.iou || 0.5).toFixed(2);
+
+                    const customGroup = document.getElementById("auto-label-custom-model-group");
+                    if (customGroup) {
+                        customGroup.style.display = session.autolabel.model_source === "custom_path" ? "block" : "none";
+                    }
+                }
+
+                if (session.training) {
+                    this.value("train-model", session.training.model_id || "yolo11n");
+                    this.value("train-epochs", session.training.epochs || 50);
+                    this.value("train-batch", session.training.batch || 16);
+                }
+
+                if (session.dataset_split) {
+                    const t = Math.round((session.dataset_split.train || 0.7) * 100);
+                    const v = Math.round((session.dataset_split.val || 0.2) * 100);
+                    const ts = Math.round((session.dataset_split.test || 0.1) * 100);
+
+                    this.value("slider-train", t);
+                    this.value("slider-val", v);
+                    this.value("slider-test", ts);
+
+                    const lblTrain = document.getElementById("lbl-train");
+                    if (lblTrain) lblTrain.textContent = `${t}%`;
+                    const lblVal = document.getElementById("lbl-val");
+                    if (lblVal) lblVal.textContent = `${v}%`;
+                    const lblTest = document.getElementById("lbl-test");
+                    if (lblTest) lblTest.textContent = `${ts}%`;
+                }
+
+                // 掃描資料
+                await this.scanDataset();
+
+                // 恢復當前圖片索引
+                if (session.current_image_index >= 0 && this.images && this.images.length > session.current_image_index) {
+                    this.currentImgIndex = session.current_image_index;
+                }
+
+                // 切換回儲存時的分頁與 Tab
+                if (session.current_view) {
+                    this.switchView(session.current_view, session.current_tab);
+                } else {
+                    this.switchView("database-view", "db-manage");
+                }
+
+                // 載入當前影像
+                if (this.currentImgIndex >= 0) {
+                    this.loadImgToLabelView(this.currentImgIndex);
+                }
+
+                showToast("已成功載入 Session 狀態檔", "success");
+            }
+        } catch (err) {
+            showToast(`載入 Session 失敗: ${err.message}`, "error");
+        }
+    }
 };
 
 // 網頁加載後啟動

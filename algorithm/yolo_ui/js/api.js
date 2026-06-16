@@ -35,6 +35,33 @@ const API = {
         });
     },
 
+    async closeProject() {
+        return this._post("/api/project/close");
+    },
+
+
+    // Session 管理
+    async saveStudioSession(sessionData, filepath = null) {
+        return this._post("/api/studio/session/save", {
+            filepath: filepath,
+            session_data: sessionData
+        });
+    },
+
+    async openStudioSession(filepath) {
+        return this._post("/api/studio/session/open", {
+            filepath: filepath
+        });
+    },
+
+    async chooseOpenSessionFile() {
+        return this._get("/api/studio/session/choose_open_file");
+    },
+
+    async chooseSaveSessionFile() {
+        return this._get("/api/studio/session/choose_save_file");
+    },
+
     // 系統與環境
     async checkSystem() {
         return this._get("/api/system/check");

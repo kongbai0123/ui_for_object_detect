@@ -205,6 +205,20 @@ def create_project(cfg: ProjectConfig):
 def get_active_project():
     return active_project
 
+@app.post("/api/project/close")
+def close_project():
+    global active_project
+    active_project = {
+        "project_name": "",
+        "input_path": "",
+        "output_path": "",
+        "classes": [],
+        "task_type": "Detection",
+        "status": "idle"
+    }
+    return active_project
+
+
 @app.get("/api/project/choose_directory")
 def choose_directory():
     try:
@@ -239,6 +253,55 @@ def choose_file():
             initialdir="C:/",
             title="選擇 YOLO 模型權重檔案 (.pt)",
             filetypes=[("YOLO Weights", "*.pt"), ("All Files", "*.*")]
+        )
+        root.destroy()
+        
+        if file_path:
+            file_path = file_path.replace("\\", "/")
+            return {"status": "success", "path": file_path}
+        return {"status": "cancelled", "path": ""}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "path": ""}
+
+@app.get("/api/studio/session/choose_open_file")
+def choose_open_session_file():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        
+        file_path = filedialog.askopenfilename(
+            initialdir="C:/",
+            title="選擇 Vision Training Studio 紀錄檔",
+            filetypes=[("VTS Project File", "*.vtsproj.json"), ("All Files", "*.*")]
+        )
+        root.destroy()
+        
+        if file_path:
+            file_path = file_path.replace("\\", "/")
+            return {"status": "success", "path": file_path}
+        return {"status": "cancelled", "path": ""}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "path": ""}
+
+@app.get("/api/studio/session/choose_save_file")
+def choose_save_session_file():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        
+        file_path = filedialog.asksaveasfilename(
+            initialdir="C:/",
+            title="保存 Vision Training Studio 紀錄檔",
+            defaultextension=".vtsproj.json",
+            filetypes=[("VTS Project File", "*.vtsproj.json"), ("All Files", "*.*")]
         )
         root.destroy()
         
@@ -954,6 +1017,101 @@ def switch_project(req: SwitchProjectRequest):
         save_registered_projects(projects)
 
     return active_project
+
+class SaveSessionRequest(BaseModel):
+    filepath: Optional[str] = None
+    session_data: dict
+
+@app.post("/api/studio/session/save")
+def save_studio_session(req: SaveSessionRequest):
+    global active_project
+    session_data = req.session_data
+    
+    # 決定寫入路徑
+    if req.filepath:
+        target_path = Path(req.filepath)
+    else:
+        # 如果沒給 filepath，預設保存在當前專案根目錄下的 studio_session.vtsproj.json
+        if not active_project.get("input_path"):
+            raise HTTPException(status_code=400, detail="沒有啟用中的專案，無法自動保存，請點選另存新檔。")
+        target_path = Path(active_project["input_path"]) / "studio_session.vtsproj.json"
+        
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
+            json.dump(session_data, f, indent=4, ensure_ascii=False)
+            
+        # 同步更新全域 active_project 的值，好讓專案資訊與儲存的 session 一致
+        input_path = session_data.get("input_path")
+        if input_path:
+            active_project["input_path"] = str(Path(input_path).resolve())
+            active_project["project_name"] = session_data.get("project_name", active_project["project_name"])
+            active_project["classes"] = session_data.get("classes", active_project["classes"])
+            active_project["task_type"] = session_data.get("task_type", active_project["task_type"])
+            active_project["status"] = "active"
+            
+            # 寫入設定檔 project_config.json
+            config_file = Path(input_path) / "project_config.json"
+            with open(config_file, "w", encoding="utf-8") as f:
+                json.dump(active_project, f, indent=4, ensure_ascii=False)
+                
+        return {"status": "success", "message": f"成功保存紀錄檔至: {str(target_path)}", "filepath": str(target_path)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存紀錄檔失敗: {str(e)}")
+
+class OpenSessionRequest(BaseModel):
+    filepath: str
+
+@app.post("/api/studio/session/open")
+def open_studio_session(req: OpenSessionRequest):
+    global active_project
+    target_path = Path(req.filepath)
+    if not target_path.exists():
+        raise HTTPException(status_code=404, detail="找不到指定的紀錄檔")
+        
+    try:
+        with open(target_path, "r", encoding="utf-8") as f:
+            session_data = json.load(f)
+            
+        # 套用 session 中的專案路徑
+        input_path = session_data.get("input_path")
+        if not input_path:
+            raise HTTPException(status_code=400, detail="紀錄檔格式錯誤：未包含 input_path")
+            
+        path = Path(input_path).resolve()
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"紀錄檔中指定的專案目錄不存在: {input_path}")
+            
+        # 同步 active_project 全域變數
+        active_project = {
+            "project_name": session_data.get("project_name", path.name),
+            "input_path": str(path),
+            "output_path": session_data.get("output_path", str(path / "runs")),
+            "classes": session_data.get("classes", []),
+            "task_type": session_data.get("task_type", "Detection"),
+            "status": "active"
+        }
+        
+        # 寫入 project_config.json
+        config_file = path / "project_config.json"
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(active_project, f, indent=4, ensure_ascii=False)
+            
+        # 更新至 projects.json 中
+        projects = get_registered_projects()
+        if not any(p["input_path"] == active_project["input_path"] for p in projects):
+            projects.append({
+                "project_name": active_project["project_name"],
+                "input_path": active_project["input_path"],
+                "output_path": active_project["output_path"],
+                "classes": active_project["classes"],
+                "task_type": active_project["task_type"]
+            })
+            save_registered_projects(projects)
+            
+        return {"status": "success", "session_data": session_data, "active_project": active_project}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"讀取紀錄檔失敗: {str(e)}")
 
 @app.get("/api/system/check")
 def system_check():
