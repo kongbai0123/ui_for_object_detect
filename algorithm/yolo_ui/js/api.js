@@ -110,8 +110,8 @@ const API = {
     },
 
     // 訓練管理
-    async startTrain(epochs) {
-        return this._post("/api/train/start", { epochs: epochs });
+    async startTrain(payload) {
+        return this._post("/api/train/start", payload);
     },
 
     async getTrainStatus() {

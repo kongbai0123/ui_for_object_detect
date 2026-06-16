@@ -438,12 +438,13 @@ def save_labels(payload: Dict):
         raise HTTPException(status_code=500, detail=f"無法儲存標籤: {str(e)}")
 
 # 模擬訓練執行緒
-def simulate_training_job(epochs: int, input_path: str, output_folder: str):
+def simulate_training_job(cfg: 'TrainConfig', input_path: str, output_folder: str):
     global train_status
     import random
     
     start_time = time.time()
     best_acc = 0.0
+    epochs = cfg.epochs
     
     # 建立輸出目錄
     out_dir = Path(output_folder)
@@ -452,9 +453,18 @@ def simulate_training_job(epochs: int, input_path: str, output_folder: str):
     # 寫入初版訓練 log
     log_file = out_dir / "train_log.txt"
     with open(log_file, "w", encoding="utf-8") as f:
-        f.write("YOLO UI Training Job Started\n")
-        f.write(f"Input Dataset: {input_path}\n")
-        f.write(f"Total Epochs: {epochs}\n\n")
+        f.write("Vision Training Studio Simulation Started\n")
+        f.write(f"Selected model: {cfg.model_id}\n")
+        f.write(f"Task type: {cfg.task_type}\n")
+        f.write(f"Image size: {cfg.img_size}\n")
+        f.write(f"Batch size: {cfg.batch_size}\n")
+        f.write(f"Device: {cfg.device}\n")
+        f.write(f"Optimizer: {cfg.optimizer}\n")
+        f.write(f"Learning rate: {cfg.lr}\n")
+        f.write(f"Weight decay: {cfg.weight_decay}\n")
+        f.write(f"AMP: {cfg.amp}\n")
+        f.write(f"Early stop: {cfg.early_stop}\n")
+        f.write(f"Patience: {cfg.patience}\n\n")
         
     for epoch in range(1, epochs + 1):
         if stop_train_event.is_set():
@@ -524,56 +534,140 @@ def simulate_training_job(epochs: int, input_path: str, output_folder: str):
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(f"\n[INFO] Training finished successfully. Best Acc: {best_acc:.2f}%\n")
 
+current_trainer = None
+
+from typing import Union
+
+class TrainConfig(BaseModel):
+    model_id: str
+    task_type: str = "detection"
+    weights: str = ""
+    img_size: int = 640
+    epochs: int = 50
+    batch_size: Union[str, int] = 16
+    device: str = "auto"
+    optimizer: str = "AdamW"
+    lr: Union[str, float] = 0.001
+    weight_decay: float = 0.0005
+    patience: int = 20
+    amp: bool = True
+    early_stop: bool = True
+
+@app.get("/api/models/registry")
+def get_model_registry():
+    registry_path = Path(__file__).parent / "config" / "model_registry.json"
+    if not registry_path.exists():
+        return {"tasks": {}}
+    try:
+        with open(registry_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"無法讀取模型註冊表: {str(e)}")
+
 @app.post("/api/train/start")
-def start_train(payload: Dict):
-    global train_status, train_thread, stop_train_event
+def start_train(config: TrainConfig):
+    global current_trainer, train_status, train_thread, stop_train_event
     
     if not active_project["input_path"]:
         raise HTTPException(status_code=400, detail="沒有啟用中的專案")
         
-    if train_status["status"] == "training":
+    # 檢查是否已經在訓練
+    if current_trainer is not None:
+        status = current_trainer.get_status()
+        if status["status"] == "training":
+            return {"status": "error", "message": "訓練已在進行中"}
+    elif train_status["status"] == "training":
         return {"status": "error", "message": "訓練已在進行中"}
-        
-    epochs = int(payload.get("epochs", 50))
-    
+            
     # 建立 runs/train_YYYYMMDD_HHMMSS 資料夾
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_folder = Path(active_project["output_path"]) / f"train_{timestamp}"
     
-    # 重設訓練狀態
+    # 寫入初始訓練設定日誌
+    initial_log = [
+        "Initializing training environment...",
+        f"Selected model: {config.model_id}",
+        f"Task type: {config.task_type}",
+        f"Image size: {config.img_size}",
+        f"Batch size: {config.batch_size}",
+        f"Device: {config.device}",
+        f"Optimizer: {config.optimizer}",
+        f"Learning rate: {config.lr}",
+        f"Weight decay: {config.weight_decay}",
+        f"AMP: {config.amp}",
+        f"Early stop: {config.early_stop}",
+        f"Patience: {config.patience}"
+    ]
+    
+    # 初始化全域狀態（供模擬或舊端點使用）
     train_status = {
         "status": "training",
         "epoch": 0,
-        "total_epochs": epochs,
+        "total_epochs": config.epochs,
         "train_loss": 0.0,
         "val_loss": 0.0,
         "accuracy": 0.0,
         "best_accuracy": 0.0,
         "elapsed_time": 0,
         "remaining_time": 0,
-        "log": ["Initializing training environment..."]
+        "log": initial_log
     }
     
     stop_train_event.clear()
     
-    # 啟動背景訓練執行緒
-    train_thread = threading.Thread(
-        target=simulate_training_job,
-        args=(epochs, active_project["input_path"], str(output_folder)),
-        daemon=True
-    )
-    train_thread.start()
-    
+    # 檢查是否啟動真實 YOLOv8n / YOLO11n 偵測訓練 (Phase 2)
+    use_real_yolo = False
+    if config.task_type == "detection" and "yolo" in config.model_id.lower():
+        try:
+            import ultralytics
+            use_real_yolo = True
+        except ImportError:
+            pass
+            
+    if use_real_yolo:
+        from training.factory import TrainerFactory
+        config_dict = config.model_dump()
+        config_dict["framework"] = "ultralytics"
+        config_dict["weights"] = config.model_id + ".pt" if "yolo" in config.model_id else config.model_id
+        
+        current_trainer = TrainerFactory.create_trainer(
+            config=config_dict,
+            output_dir=str(output_folder),
+            classes=active_project["classes"],
+            input_path=active_project["input_path"]
+        )
+        current_trainer.train()
+        train_status = current_trainer.get_status()
+        train_status["log"] = initial_log + train_status["log"]
+    else:
+        # 執行模擬訓練並傳入完整的 TrainConfig
+        current_trainer = None
+        train_thread = threading.Thread(
+            target=simulate_training_job,
+            args=(config, active_project["input_path"], str(output_folder)),
+            daemon=True
+        )
+        train_thread.start()
+        
     return {"status": "success", "output_dir": str(output_folder)}
 
 @app.get("/api/train/status")
 def get_train_status():
+    global current_trainer, train_status
+    if current_trainer is not None:
+        return current_trainer.get_status()
     return train_status
 
 @app.post("/api/train/stop")
 def stop_train():
-    global train_status
-    if train_status["status"] == "training":
+    global current_trainer, train_status, stop_train_event
+    if current_trainer is not None:
+        status = current_trainer.get_status()
+        if status["status"] == "training":
+            current_trainer.stop()
+            train_status = current_trainer.get_status()
+            return {"status": "success", "message": "已傳送停止訊號"}
+    elif train_status["status"] == "training":
         stop_train_event.set()
         train_status["status"] = "stopped"
         return {"status": "success", "message": "已傳送停止訊號"}

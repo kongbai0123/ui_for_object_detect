@@ -1,0 +1,82 @@
+{
+    "tasks": {
+        "detection": {
+            "name": "Object Detection (物件偵測)",
+            "framework": "ultralytics",
+            "models": [
+                {
+                    "id": "yolov8n",
+                    "name": "YOLOv8n Detect (高速輕量偵測)",
+                    "weights": "yolov8n.pt",
+                    "size_mb": 6.2
+                },
+                {
+                    "id": "yolov8s",
+                    "name": "YOLOv8s Detect (平衡偵測)",
+                    "weights": "yolov8s.pt",
+                    "size_mb": 22.5
+                },
+                {
+                    "id": "yolo11n",
+                    "name": "YOLO11n Detect (新版高速輕量偵測)",
+                    "weights": "yolo11n.pt",
+                    "size_mb": 5.4
+                },
+                {
+                    "id": "yolo11s",
+                    "name": "YOLO11s Detect (新版平衡偵測)",
+                    "weights": "yolo11s.pt",
+                    "size_mb": 19.4
+                },
+                {
+                    "id": "yolo26n",
+                    "name": "YOLO26n Detect (極新高速輕量偵測)",
+                    "weights": "yolo26n.pt",
+                    "size_mb": 4.8
+                }
+            ]
+        },
+        "classification": {
+            "name": "Classification (影像分類)",
+            "framework": "torchvision",
+            "models": [
+                {
+                    "id": "resnet18",
+                    "name": "ResNet18 (通用、平衡結構)",
+                    "weights": "resnet18",
+                    "size_mb": 44.7
+                },
+                {
+                    "id": "mobilenetv3",
+                    "name": "MobileNetV3 (輕量化、嵌入式設備)",
+                    "weights": "mobilenetv3",
+                    "size_mb": 16.2
+                },
+                {
+                    "id": "efficientnet",
+                    "name": "EfficientNet-B0 (高精確度分類)",
+                    "weights": "efficientnet_b0",
+                    "size_mb": 20.4
+                },
+                {
+                    "id": "yolov8n-cls",
+                    "name": "YOLOv8n-cls (YOLOv8 輕量分類)",
+                    "weights": "yolov8n-cls.pt",
+                    "size_mb": 5.3
+                },
+                {
+                    "id": "yolo11n-cls",
+                    "name": "YOLO11n-cls (YOLO11 輕量分類)",
+                    "weights": "yolo11n-cls.pt",
+                    "size_mb": 4.9
+                },
+                {
+                    "id": "yolo26n-cls",
+                    "name": "YOLO26n-cls (YOLO26 輕量分類)",
+                    "weights": "yolo26n-cls.pt",
+                    "size_mb": 4.5
+                }
+            ]
+        }
+    }
+}

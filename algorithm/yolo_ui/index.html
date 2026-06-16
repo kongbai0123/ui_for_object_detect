@@ -1244,13 +1244,27 @@
                                         
                                         <div class="form-group" style="margin-top: 8px;">
                                             <label for="train-model" class="label-with-tip">選擇模型結構 (Model)
-                                                <span class="tip-icon" data-tooltip="• YOLOv8-cls：Ultralytics 官方分類模型，推論速度極快&#10;• ResNet18：殘差網路，通用且穩定，適合中小型資料集&#10;• MobileNetV3：為行動裝置設計，模型體積小&#10;• EfficientNet-B0：複合縮放架構，精確度最高但訓練較慢"><i class="fa-solid fa-circle-question"></i></span>
+                                                <span class="tip-icon" data-tooltip="• Object Detection 適合定位物體框&#10;• Classification 適合圖像分類與狀態分類&#10;• Semantic Segmentation 適合像素級區域分割"><i class="fa-solid fa-circle-question"></i></span>
                                             </label>
                                             <select id="train-model" style="width: 100%;">
-                                                <option value="yolov8-cls">YOLOv8-cls (高速影像分類)</option>
-                                                <option value="resnet18" selected>ResNet18 (通用、平衡結構)</option>
-                                                <option value="mobilenetv3">MobileNetV3 (輕量化、嵌入式設備)</option>
-                                                <option value="efficientnet">EfficientNet-B0 (高精確度)</option>
+                                                <optgroup label="Object Detection">
+                                                    <option value="yolov8n">YOLOv8n Detect</option>
+                                                    <option value="yolov8s">YOLOv8s Detect</option>
+                                                    <option value="yolo11n" selected>YOLO11n Detect</option>
+                                                    <option value="rt-detr-r18">RT-DETR-r18</option>
+                                                    <option value="fasterrcnn-r50">Faster R-CNN ResNet50-FPN</option>
+                                                </optgroup>
+                                                <optgroup label="Classification">
+                                                    <option value="resnet18">ResNet18</option>
+                                                    <option value="mobilenetv3">MobileNetV3</option>
+                                                    <option value="efficientnet-b0">EfficientNet-B0</option>
+                                                    <option value="convnext-tiny">ConvNeXt-Tiny</option>
+                                                </optgroup>
+                                                <optgroup label="Semantic Segmentation">
+                                                    <option value="segformer-b0">SegFormer-B0</option>
+                                                    <option value="deeplabv3plus">DeepLabv3+</option>
+                                                    <option value="mobilenetv3-deeplab">MobileNetV3-DeepLab</option>
+                                                </optgroup>
                                             </select>
                                         </div>
 

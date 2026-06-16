@@ -1937,6 +1937,8 @@ names:
         });
     },
 
+
+
     runTrainingPrecheck() {
         const body = document.getElementById("precheck-results-body");
         body.innerHTML = "";
@@ -1986,11 +1988,54 @@ names:
     },
 
     async startModelTraining() {
-        const epochsInput = document.getElementById("train-epochs").value;
-        const epochs = parseInt(epochsInput) || 50;
+        const modelId = document.getElementById("train-model")?.value || "yolov8n";
+        
+        // 根據 modelId 推斷 task_type 與 weights
+        let taskType = "detection";
+        const classificationModels = ["resnet18", "mobilenetv3", "efficientnet-b0", "convnext-tiny"];
+        const segmentationModels = ["segformer-b0", "deeplabv3plus", "mobilenetv3-deeplab"];
+        if (classificationModels.includes(modelId)) {
+            taskType = "classification";
+        } else if (segmentationModels.includes(modelId)) {
+            taskType = "segmentation";
+        }
+        
+        const weights = modelId.includes("yolo") ? `${modelId}.pt` : modelId;
+        const imgSize = parseInt(document.getElementById("train-img-size")?.value) || 640;
+        const epochs = parseInt(document.getElementById("train-epochs")?.value) || 50;
+        
+        const batchVal = document.getElementById("train-batch")?.value || "-1";
+        const batchSize = (batchVal === "-1" || batchVal === "auto") ? -1 : parseInt(batchVal);
+        
+        const device = document.getElementById("train-device")?.value || "auto";
+        const optimizer = document.getElementById("train-optimizer")?.value || "AdamW";
+        
+        const lrVal = document.getElementById("train-lr")?.value || "0.001";
+        const lr = (lrVal === "-1" || lrVal === "auto") ? 0.001 : parseFloat(lrVal);
+        
+        const weightDecay = parseFloat(document.getElementById("adv-weight-decay")?.value) || 0.0005;
+        const amp = document.getElementById("adv-amp") ? document.getElementById("adv-amp").checked : true;
+        const earlyStop = document.getElementById("adv-early-stop") ? document.getElementById("adv-early-stop").checked : true;
+        const patience = parseInt(document.getElementById("adv-patience")?.value) || 20;
+
+        const config = {
+            model_id: modelId,
+            task_type: taskType,
+            weights: weights,
+            img_size: imgSize,
+            epochs: epochs,
+            batch_size: batchSize,
+            device: device,
+            optimizer: optimizer,
+            lr: lr,
+            weight_decay: weightDecay,
+            amp: amp,
+            early_stop: earlyStop,
+            patience: patience
+        };
 
         try {
-            await API.startTrain(epochs);
+            await API.startTrain(config);
             showToast("訓練線程已成功啟動！", "success");
 
             // 介面切換
