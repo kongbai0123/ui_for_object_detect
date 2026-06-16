@@ -1742,25 +1742,28 @@ def merge_and_save_labels(target_dir: Path, label_cache: dict):
             print(f"[AUTOLABEL] 讀取現有 labels.csv 失敗: {e}")
             
     # 合併新舊標記
+    protected_statuses = {"done", "verified", "ignore"}
     for img_path, new_data in label_cache.items():
         if img_path in existing_cache:
             old_status = existing_cache[img_path].get("status", "pending")
             old_label = existing_cache[img_path].get("label", "")
-            if old_status == "verified" and old_label not in ["", "[]"]:
-                # 保留已確認的標籤，不予覆蓋
+            if old_status in protected_statuses and old_label not in ["", "[]"]:
+                # 保留已確認或已標記完成的標籤，不予覆蓋
                 continue
         existing_cache[img_path] = new_data
         
     # 寫入 CSV 檔案
     try:
+        import csv
         with open(csv_file, "w", encoding="utf-8", newline="") as f:
-            f.write("image_path,label,status\n")
+            writer = csv.writer(f)
+            writer.writerow(["image_path", "label", "status"])
             for img_path, data in existing_cache.items():
-                label = data.get("label", "[]")
-                status = data.get("status", "pending")
-                # 逸出雙引號
-                safe_label = label.replace('"', '""')
-                f.write(f'{img_path},"{safe_label}",{status}\n')
+                writer.writerow([
+                    img_path,
+                    data.get("label", "[]"),
+                    data.get("status", "pending")
+                ])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"儲存自動標註 CSV 失敗: {str(e)}")
 

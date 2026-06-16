@@ -3899,6 +3899,12 @@ names:
                 return;
             }
 
+            // 嚴格版本限制：自動標註目錄必須等於目前專案資料目錄，避免 labels.csv 寫入不同資料夾導致資料錯位
+            if (dirPath !== this.inputPath) {
+                showToast("自動標註目錄必須等於目前專案資料目錄，請先切換專案或重新選擇。", "warn");
+                return;
+            }
+
             const modelSource = document.getElementById("auto-label-model-source")?.value || "project_best";
             const modelPath = document.getElementById("auto-label-model-path")?.value.trim() || "";
             const confidence = parseFloat(document.getElementById("auto-label-confidence")?.value || "0.75");
