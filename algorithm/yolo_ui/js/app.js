@@ -1090,9 +1090,10 @@ const App = {
             document.querySelectorAll(".card-auto-total-imgs").forEach(el => el.textContent = summary.total_images);
             setElText("card-auto-health-score", `${healthScore}%`);
             
+            const autoProcessedCount = this.images.filter(img => img.label && img.label !== "[]" && img.label !== "").length;
             const processedEl = document.getElementById("card-auto-processed");
             if (processedEl) {
-                processedEl.textContent = `${summary.done} / ${summary.total_images}`;
+                processedEl.textContent = `${autoProcessedCount} / ${summary.total_images}`;
             }
             
             document.querySelectorAll(".card-auto-pending-count").forEach(el => el.textContent = unlabeledCount);
@@ -1251,6 +1252,7 @@ const App = {
         // 工具列模式選擇
         this.on("tool-select", "click", () => this.setLabelToolMode("select"));
         this.on("tool-bbox", "click", () => this.setLabelToolMode("draw"));
+        this.on("tool-polygon", "click", () => this.setLabelToolMode("polygon"));
 
         // 畫布縮放與輔助按鈕
         this.on("tool-zoom-in", "click", () => {
@@ -1377,10 +1379,15 @@ const App = {
 
     setLabelToolMode(mode) {
         ImageLabeler.mode = mode;
-        document.getElementById("tool-select").classList.toggle("active", mode === "select");
-        document.getElementById("tool-bbox").classList.toggle("active", mode === "draw");
+        const toolSelect = document.getElementById("tool-select");
+        const toolBbox = document.getElementById("tool-bbox");
+        const toolPolygon = document.getElementById("tool-polygon");
+        
+        if (toolSelect) toolSelect.classList.toggle("active", mode === "select");
+        if (toolBbox) toolBbox.classList.toggle("active", mode === "draw");
+        if (toolPolygon) toolPolygon.classList.toggle("active", mode === "polygon");
 
-        if (mode === "draw") {
+        if (mode === "draw" || mode === "polygon") {
             ImageLabeler.selectedBoxIndex = -1;
             ImageLabeler.updateBBoxList();
             ImageLabeler.draw();
@@ -2668,6 +2675,14 @@ names:
                 const activeView = document.querySelector(".app-view.active").id;
                 if (activeView === "label-view") {
                     this.setLabelToolMode("draw");
+                }
+            }
+
+            // P = 多邊形標註
+            if (key === "p") {
+                const activeView = document.querySelector(".app-view.active").id;
+                if (activeView === "label-view") {
+                    this.setLabelToolMode("polygon");
                 }
             }
 
@@ -4281,40 +4296,85 @@ names:
     },
 
     renderAutoLabelBboxes(predictions, containerEl) {
-        // 使用百分比絕對定位畫出 bbox
+        // 使用百分比絕對定位畫出 bbox 或 SVG 畫出 polygon
         const COLORS = ["#f97316", "#3b82f6", "#10b981", "#ef4444", "#a855f7", "#eab308", "#06b6d4"];
+        
+        let svgEl = null;
+        const hasPolygon = predictions.some(pred => pred.type === "polygon" || !!pred.points);
+        if (hasPolygon) {
+            svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svgEl.setAttribute("style", "position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;");
+            containerEl.appendChild(svgEl);
+        }
+
         predictions.forEach((pred, i) => {
             const color = COLORS[i % COLORS.length];
-            const box = document.createElement("div");
-            box.style.cssText = [
-                "position: absolute",
-                `left: ${pred.x * 100}%`,
-                `top: ${pred.y * 100}%`,
-                `width: ${pred.w * 100}%`,
-                `height: ${pred.h * 100}%`,
-                `border: 2px solid ${color}`,
-                "border-radius: 2px",
-                "box-sizing: border-box",
-                "pointer-events: none"
-            ].join(";");
+            const isPolygon = pred.type === "polygon" || !!pred.points;
 
-            // label chip
-            const chip = document.createElement("span");
-            chip.style.cssText = [
-                "position: absolute",
-                "top: -18px",
-                "left: 0",
-                `background: ${color}`,
-                "color: #fff",
-                "font-size: 10px",
-                "padding: 1px 4px",
-                "border-radius: 3px",
-                "white-space: nowrap",
-                "line-height: 16px"
-            ].join(";");
-            chip.textContent = `${pred.label} ${(pred.confidence * 100).toFixed(0)}%`;
-            box.appendChild(chip);
-            containerEl.appendChild(box);
+            if (isPolygon && pred.points && pred.points.length > 0) {
+                // 利用 SVG polygon 繪製多邊形
+                const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                const ptsStr = pred.points.map(pt => `${pt[0] * 100},${pt[1] * 100}`).join(" ");
+                poly.setAttribute("points", ptsStr);
+                poly.setAttribute("style", `fill: ${color}22; stroke: ${color}; stroke-width: 2; vector-effect: non-scaling-stroke;`);
+                svgEl.appendChild(poly);
+
+                // 標籤文字 (使用 HTML 絕對定位在第一個點上)
+                const firstPt = pred.points[0];
+                const chip = document.createElement("span");
+                chip.style.cssText = [
+                    "position: absolute",
+                    `left: ${firstPt[0] * 100}%`,
+                    `top: ${firstPt[1] * 100}%`,
+                    `background: ${color}`,
+                    "color: #fff",
+                    "font-size: 10px",
+                    "padding: 1px 4px",
+                    "border-radius: 3px",
+                    "white-space: nowrap",
+                    "transform: translate(-50%, -100%)",
+                    "pointer-events: none",
+                    "z-index: 10"
+                ].join(";");
+                chip.textContent = `${pred.label} ${(pred.confidence * 100).toFixed(0)}%`;
+                containerEl.appendChild(chip);
+            } else {
+                const x = pred.x !== undefined ? pred.x : (pred.bbox ? pred.bbox.x : 0);
+                const y = pred.y !== undefined ? pred.y : (pred.bbox ? pred.bbox.y : 0);
+                const w = pred.w !== undefined ? pred.w : (pred.bbox ? pred.bbox.w : 0);
+                const h = pred.h !== undefined ? pred.h : (pred.bbox ? pred.bbox.h : 0);
+
+                const box = document.createElement("div");
+                box.style.cssText = [
+                    "position: absolute",
+                    `left: ${x * 100}%`,
+                    `top: ${y * 100}%`,
+                    `width: ${w * 100}%`,
+                    `height: ${h * 100}%`,
+                    `border: 2px solid ${color}`,
+                    "border-radius: 2px",
+                    "box-sizing: border-box",
+                    "pointer-events: none"
+                ].join(";");
+
+                // label chip
+                const chip = document.createElement("span");
+                chip.style.cssText = [
+                    "position: absolute",
+                    "top: -18px",
+                    "left: 0",
+                    `background: ${color}`,
+                    "color: #fff",
+                    "font-size: 10px",
+                    "padding: 1px 4px",
+                    "border-radius: 3px",
+                    "white-space: nowrap",
+                    "line-height: 16px"
+                ].join(";");
+                chip.textContent = `${pred.label} ${(pred.confidence * 100).toFixed(0)}%`;
+                box.appendChild(chip);
+                containerEl.appendChild(box);
+            }
         });
     },
 

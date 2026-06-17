@@ -1,3 +1,17 @@
+// 安全 Toast 輔助
+const safeShowToast = (msg, type = "info", duration = 3000) => {
+    if (typeof showToast === "function") {
+        showToast(msg, type, duration);
+    } else {
+        console.log(`[TOAST-FALLBACK] [${type}] ${msg}`);
+        const alertEl = document.createElement("div");
+        alertEl.style.cssText = "position: fixed; top: 10px; right: 10px; background: rgba(239, 68, 68, 0.9); color: white; padding: 12px 24px; border-radius: 6px; z-index: 10000; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-weight: bold;";
+        alertEl.textContent = msg;
+        document.body.appendChild(alertEl);
+        setTimeout(() => alertEl.remove(), duration);
+    }
+};
+
 // Canvas 影像標記引擎
 const ImageLabeler = {
     canvas: null,
@@ -31,6 +45,7 @@ const ImageLabeler = {
     // 結構: { x: float, y: float, w: float, h: float, label: string }
     // 坐標以 0~1 的相對值儲存，以確保縮放與解析度無關
     bboxes: [],
+    activePolygonPoints: [],
     selectedBoxIndex: -1,
     activeClass: "cat",
     classColors: {}, // label -> rgb color
@@ -49,22 +64,35 @@ const ImageLabeler = {
         window.addEventListener("resize", this.fitToWindow.bind(this));
         
         this.img.onload = () => {
-            this.imgLoaded = true;
-            this.fitToWindow();
-            document.getElementById("canvas-empty-overlay").style.display = "none";
-            
-            // 填寫圖片屬性
-            document.getElementById("info-size").textContent = `${this.img.naturalWidth} x ${this.img.naturalHeight}`;
-            document.getElementById("info-format").textContent = this.currentImagePath.split('.').pop().toUpperCase();
+            try {
+                this.imgLoaded = true;
+                this.fitToWindow();
+                const overlay = document.getElementById("canvas-empty-overlay");
+                if (overlay) overlay.style.display = "none";
+                
+                // 填寫圖片屬性
+                const infoSize = document.getElementById("info-size");
+                if (infoSize) infoSize.textContent = `${this.img.naturalWidth} x ${this.img.naturalHeight}`;
+                const infoFormat = document.getElementById("info-format");
+                if (infoFormat) infoFormat.textContent = this.currentImagePath.split('.').pop().toUpperCase();
+            } catch (err) {
+                console.error("[CANVAS-ONLOAD-ERROR] Exception in onload:", err);
+            }
         };
         
         this.img.onerror = () => {
-            this.imgLoaded = false;
-            document.getElementById("canvas-empty-overlay").style.display = "flex";
-            const filename = this.currentImagePath ? this.currentImagePath.split('/').pop().split('\\').pop() : "未知影像";
-            const errorMsg = `影像 [${filename}] 載入失敗！網址: ${this.img.src}。請打開 F12 開發者工具檢查該請求或檔案是否損毀。`;
-            console.error(`[IMAGE-LOAD-ERROR] Failed to load image: ${this.currentImagePath}, URL: ${this.img.src}`);
-            showToast(errorMsg, "error", 8000);
+            try {
+                this.imgLoaded = false;
+                const overlay = document.getElementById("canvas-empty-overlay");
+                if (overlay) overlay.style.display = "flex";
+                
+                const filename = this.currentImagePath ? this.currentImagePath.split('/').pop().split('\\').pop() : "未知影像";
+                const errorMsg = `影像 [${filename}] 載入失敗！網址: ${this.img.src}。請打開 F12 開發者工具檢查該請求或檔案是否損毀。`;
+                console.error(`[IMAGE-LOAD-ERROR] Failed to load image: ${this.currentImagePath}, URL: ${this.img.src}`);
+                safeShowToast(errorMsg, "error", 8000);
+            } catch (err) {
+                console.error("[CANVAS-ONERROR-ERROR] Exception in onerror:", err);
+            }
         };
     },
 
@@ -170,6 +198,37 @@ const ImageLabeler = {
         if (e.button === 0) { // 左鍵
             const mouseRel = this.getRelativeCoordinates(e.clientX, e.clientY);
             
+            if (this.mode === "polygon") {
+                // 如果點擊接近起點，或是雙擊，就封閉多邊形
+                const distToStart = this.activePolygonPoints.length > 0
+                    ? Math.hypot(mouseRel.x - this.activePolygonPoints[0][0], mouseRel.y - this.activePolygonPoints[0][1])
+                    : Infinity;
+
+                if (e.detail === 2 || (this.activePolygonPoints.length >= 3 && distToStart < 0.025)) {
+                    if (this.activePolygonPoints.length >= 3) {
+                        const newPoly = {
+                            type: "polygon",
+                            points: JSON.parse(JSON.stringify(this.activePolygonPoints)),
+                            label: this.activeClass
+                        };
+                        this.bboxes.push(newPoly);
+                        this.selectedBoxIndex = this.bboxes.length - 1;
+                        this.activePolygonPoints = [];
+                        this.updateBBoxList();
+                        safeShowToast(`已完成多邊形標記: ${this.activeClass}`, "success");
+                        if (typeof App !== "undefined" && App.saveCurrentImgLabelToCache) {
+                            App.saveCurrentImgLabelToCache();
+                        }
+                    } else {
+                        this.activePolygonPoints = [];
+                    }
+                } else {
+                    this.activePolygonPoints.push([mouseRel.x, mouseRel.y]);
+                }
+                this.draw();
+                return;
+            }
+            
             if (this.mode === "draw") {
                 this.isDrawing = true;
                 this.startX = mouseRel.x;
@@ -245,6 +304,14 @@ const ImageLabeler = {
             return;
         }
 
+        if (this.mode === "polygon" && this.activePolygonPoints && this.activePolygonPoints.length > 0) {
+            const mouseRel = this.getRelativeCoordinates(e.clientX, e.clientY);
+            this.currentX = mouseRel.x;
+            this.currentY = mouseRel.y;
+            this.draw();
+            return;
+        }
+
         if (this.isDraggingBox && this.selectedBoxIndex !== -1) {
             const mouseRel = this.getRelativeCoordinates(e.clientX, e.clientY);
             const box = this.bboxes[this.selectedBoxIndex];
@@ -286,7 +353,7 @@ const ImageLabeler = {
             this.canvas.style.cursor = "grab";
         } else if (this.isDraggingBox) {
             this.canvas.style.cursor = "move";
-        } else if (this.mode === "draw") {
+        } else if (this.mode === "draw" || this.mode === "polygon") {
             this.canvas.style.cursor = "crosshair";
         } else if (this.mode === "select") {
             const mouseRel = this.getRelativeCoordinates(e.clientX, e.clientY);
@@ -358,7 +425,7 @@ const ImageLabeler = {
                 this.bboxes.push(newBox);
                 this.selectedBoxIndex = this.bboxes.length - 1;
                 this.updateBBoxList();
-                showToast(`已新增標記框: ${this.activeClass}`, "success");
+                safeShowToast(`已新增標記框: ${this.activeClass}`, "success");
             }
             this.draw();
         }
@@ -391,7 +458,7 @@ const ImageLabeler = {
             this.selectedBoxIndex = -1;
             this.updateBBoxList();
             this.draw();
-            showToast(`已刪除標記框: ${deleted.label}`, "info");
+            safeShowToast(`已刪除標記框: ${deleted.label}`, "info");
         }
     },
 
@@ -401,7 +468,7 @@ const ImageLabeler = {
             this.selectedBoxIndex = -1;
             this.updateBBoxList();
             this.draw();
-            showToast("已清除此圖片的所有標記", "info");
+            safeShowToast("已清除此圖片的所有標記", "info");
         }
     },
 
@@ -526,6 +593,39 @@ const ImageLabeler = {
             this.ctx.fillStyle = "rgba(0, 229, 255, 0.08)";
             this.ctx.fillRect(p1.x, p1.y, w, h);
             this.ctx.setLineDash([]);
+        }
+
+        // 4. 繪製正在繪製中的多邊形頂點與引導線
+        if (this.mode === "polygon" && this.activePolygonPoints && this.activePolygonPoints.length > 0) {
+            this.ctx.beginPath();
+            this.activePolygonPoints.forEach((pt, pIdx) => {
+                const canvasPt = this.getCanvasCoordinates(pt[0], pt[1]);
+                if (pIdx === 0) {
+                    this.ctx.moveTo(canvasPt.x, canvasPt.y);
+                } else {
+                    this.ctx.lineTo(canvasPt.x, canvasPt.y);
+                }
+            });
+            const currentMouseCanvas = this.getCanvasCoordinates(this.currentX, this.currentY);
+            this.ctx.lineTo(currentMouseCanvas.x, currentMouseCanvas.y);
+            
+            this.ctx.strokeStyle = "#a855f7";
+            this.ctx.lineWidth = 1.5;
+            this.ctx.setLineDash([3, 3]);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+
+            // 繪製頂點圓點
+            this.activePolygonPoints.forEach((pt) => {
+                const canvasPt = this.getCanvasCoordinates(pt[0], pt[1]);
+                this.ctx.beginPath();
+                this.ctx.arc(canvasPt.x, canvasPt.y, 4, 0, Math.PI * 2);
+                this.ctx.fillStyle = "#00e5ff";
+                this.ctx.fill();
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeStyle = "#fff";
+                this.ctx.stroke();
+            });
         }
     },
 

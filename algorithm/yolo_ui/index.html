@@ -10,7 +10,7 @@
     <!-- 引入 FontAwesome 圖示 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- 引入自訂樣式 -->
-    <link rel="stylesheet" href="css/styles.css?v=20260612">
+    <link rel="stylesheet" href="css/styles.css?v=20260617">
     <style>
         /* 確保工作區視窗支援垂直滾動，防止下方內容被截斷 */
         .workspace-view {
@@ -2079,11 +2079,76 @@
     <div id="toast-container" style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px;"></div>
 
     <!-- 腳本引入 -->
-    <script src="js/api.js?v=20260612"></script>
-    <script src="js/canvas.js?v=20260612"></script>
-    <script src="js/train.js?v=20260612"></script>
-    <script src="js/app.js?v=20260612"></script>
+    <script src="js/api.js?v=20260617"></script>
+    <script src="js/canvas.js?v=20260617"></script>
+    <script src="js/train.js?v=20260617"></script>
+    <script src="js/app.js?v=20260617"></script>
     <script>
+        // 全域 Toast 提示函數
+        window.showToast = function(message, type = "info", duration = 3000) {
+            const container = document.getElementById("toast-container");
+            if (!container) return;
+
+            const toast = document.createElement("div");
+            toast.className = `toast-message ${type}`;
+            toast.style.cssText = `
+                padding: 12px 20px;
+                border-radius: 8px;
+                color: #fff;
+                font-size: 0.88rem;
+                font-weight: 500;
+                background: rgba(30, 41, 59, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+                backdrop-filter: blur(10px);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                min-width: 250px;
+                transform: translateY(20px);
+                opacity: 0;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            `;
+
+            let icon = "fa-info-circle";
+            let borderClr = "var(--neon-blue, #3b82f6)";
+            if (type === "success") {
+                icon = "fa-circle-check";
+                borderClr = "var(--neon-green, #10b981)";
+                toast.style.borderLeft = `4px solid ${borderClr}`;
+            } else if (type === "error") {
+                icon = "fa-circle-exclamation";
+                borderClr = "var(--neon-red, #ef4444)";
+                toast.style.borderLeft = `4px solid ${borderClr}`;
+            } else if (type === "warn" || type === "warning") {
+                icon = "fa-triangle-exclamation";
+                borderClr = "var(--neon-yellow, #f59e0b)";
+                toast.style.borderLeft = `4px solid ${borderClr}`;
+            } else {
+                icon = "fa-info-circle";
+                borderClr = "var(--neon-blue, #3b82f6)";
+                toast.style.borderLeft = `4px solid ${borderClr}`;
+            }
+
+            toast.innerHTML = `<i class="fa-solid ${icon}" style="color: ${borderClr};"></i><span>${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.transform = "translateY(0)";
+                toast.style.opacity = "1";
+            }, 10);
+
+            setTimeout(() => {
+                toast.style.transform = "translateY(-20px)";
+                toast.style.opacity = "0";
+                setTimeout(() => {
+                    if (toast.parentNode === container) {
+                        container.removeChild(toast);
+                    }
+                }, 300);
+            }, duration);
+        };
+
         // DOM 載入後初始化 App
         document.addEventListener("DOMContentLoaded", () => {
             App.init();

@@ -63,8 +63,9 @@ def get_project_image(file_path: str):
     if not full_path.exists() or not full_path.is_file():
         raise HTTPException(status_code=404, detail="圖片不存在")
         
+    media_type = "image/webp" if file_path.lower().endswith(".webp") else "image/jpeg"
     from fastapi.responses import FileResponse
-    return FileResponse(str(full_path))
+    return FileResponse(str(full_path), media_type=media_type)
 
 @app.get("/")
 def read_index():
@@ -467,14 +468,13 @@ def scan_data():
     csv_file = input_dir / "labels.csv"
     if csv_file.exists():
         try:
-            with open(csv_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                for line in lines[1:]:  # 跳過標題
-                    parts = line.strip().split(",", 2)
-                    if len(parts) >= 2:
-                        img_path = parts[0]
-                        label_val = parts[1]
-                        status = parts[2] if len(parts) > 2 else "done"
+            with open(csv_file, "r", encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    img_path = row.get("image_path")
+                    label_val = row.get("label", "")
+                    status = row.get("status", "done")
+                    if img_path:
                         labels[img_path] = {"label": label_val, "status": status}
         except Exception as e:
             print(f"讀取 labels.csv 出錯: {e}")
@@ -602,15 +602,17 @@ def save_labels(payload: Dict):
     
     # 儲存為 csv 格式
     try:
-        with open(csv_file, "w", encoding="utf-8") as f:
-            f.write("image_path,label,status\n")
+        with open(csv_file, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["image_path", "label", "status"])
+            writer.writeheader()
             for img_path, info in payload.items():
                 lbl = info.get("label", "")
                 status = info.get("status", "done")
-                # 避免逗號破壞 csv，將 label 加上引號 (物件偵測的 JSON string 也可以儲存)
-                if "," in lbl or "[" in lbl:
-                    lbl = f'"{lbl}"'
-                f.write(f"{img_path},{lbl},{status}\n")
+                writer.writerow({
+                    "image_path": img_path,
+                    "label": lbl,
+                    "status": status
+                })
         return {"status": "success", "message": "標籤已儲存"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"無法儲存標籤: {str(e)}")
@@ -1320,37 +1322,31 @@ def dataset_check():
     csv_file = input_dir / "labels.csv"
     if csv_file.exists():
         try:
-            with open(csv_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                for line in lines[1:]:
-                    parts = line.strip().split(",", 2)
-                    if len(parts) >= 2:
-                        img_path = parts[0]
-                        label_val = parts[1].strip()
-                        if label_val.startswith('"') and label_val.endswith('"'):
-                            label_val = label_val[1:-1]
-                        
-                        if label_val:
-                            if label_val.startswith("["):
-                                try:
-                                    boxes = json.loads(label_val)
-                                    if len(boxes) > 0:
-                                        labeled_images += 1
-                                        for b in boxes:
-                                            lbl = b.get("label", "unknown")
-                                            class_distribution[lbl] = class_distribution.get(lbl, 0) + 1
-                                    else:
-                                        empty_images += 1
-                                except Exception:
+            with open(csv_file, "r", encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    label_val = row.get("label", "").strip()
+                    if label_val:
+                        if label_val.startswith("["):
+                            try:
+                                boxes = json.loads(label_val)
+                                if len(boxes) > 0:
                                     labeled_images += 1
-                                    class_distribution[label_val] = class_distribution.get(label_val, 0) + 1
-                            else:
+                                    for b in boxes:
+                                        lbl = b.get("label", "unknown")
+                                        class_distribution[lbl] = class_distribution.get(lbl, 0) + 1
+                                else:
+                                    empty_images += 1
+                            except Exception:
                                 labeled_images += 1
                                 class_distribution[label_val] = class_distribution.get(label_val, 0) + 1
                         else:
-                            empty_images += 1
+                            labeled_images += 1
+                            class_distribution[label_val] = class_distribution.get(label_val, 0) + 1
+                    else:
+                        empty_images += 1
         except Exception as e:
-            print(f"Error reading labels.csv: {e}")
+            print(f"Error reading labels.csv in dataset_check: {e}")
             
     empty_images = total_images - labeled_images
     
