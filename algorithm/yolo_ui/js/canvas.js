@@ -61,7 +61,10 @@ const ImageLabeler = {
         this.img.onerror = () => {
             this.imgLoaded = false;
             document.getElementById("canvas-empty-overlay").style.display = "flex";
-            showToast("圖片載入失敗，請檢查路徑或伺服器連線", "error");
+            const filename = this.currentImagePath ? this.currentImagePath.split('/').pop().split('\\').pop() : "未知影像";
+            const errorMsg = `影像 [${filename}] 載入失敗！網址: ${this.img.src}。請打開 F12 開發者工具檢查該請求或檔案是否損毀。`;
+            console.error(`[IMAGE-LOAD-ERROR] Failed to load image: ${this.currentImagePath}, URL: ${this.img.src}`);
+            showToast(errorMsg, "error", 8000);
         };
     },
 

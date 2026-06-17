@@ -16,6 +16,12 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from PIL import Image, ImageOps
+import hashlib
+
+VALID_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
 
 app = FastAPI(title="YOLO UI Backend API", version="1.0.0")
 
@@ -374,6 +380,67 @@ def open_output_folder():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"無法開啟資料夾: {str(e)}")
 
+def validate_image_file(path: Path) -> bool:
+    try:
+        with Image.open(path) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
+
+THUMB_DIRNAME = ".vts_cache/thumbs"
+
+def make_thumb(input_dir: Path, rel_path: str) -> Optional[str]:
+    try:
+        src = (input_dir / rel_path).resolve()
+        if not src.exists():
+            return None
+            
+        cache_dir = input_dir / THUMB_DIRNAME
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        key = hashlib.sha1(rel_path.encode("utf-8")).hexdigest()[:20]
+        thumb_path = cache_dir / f"{key}.webp"
+
+        if not thumb_path.exists():
+            with Image.open(src) as im:
+                try:
+                    im = ImageOps.exif_transpose(im)
+                except Exception:
+                    pass
+                im = im.convert("RGB")
+                im.thumbnail((320, 320))
+                try:
+                    im.save(thumb_path, "WEBP", quality=70, method=6)
+                except Exception:
+                    # Fallback to JPEG if WebP support is not available in Pillow
+                    thumb_path = cache_dir / f"{key}.jpg"
+                    if not thumb_path.exists():
+                        im.save(thumb_path, "JPEG", quality=80)
+
+        actual_name = f"{key}.webp" if (cache_dir / f"{key}.webp").exists() else f"{key}.jpg"
+        return f"/thumbs/{actual_name}"
+    except Exception as e:
+        print(f"[THUMB-ERROR] 產生縮圖失敗 ({rel_path}): {e}")
+        return None
+
+@app.get("/thumbs/{filename}")
+def get_thumb(filename: str):
+    if not active_project["input_path"]:
+        raise HTTPException(status_code=400, detail="沒有啟用中的專案")
+        
+    thumb_dir = Path(active_project["input_path"]) / ".vts_cache" / "thumbs"
+    full_path = (thumb_dir / filename).resolve()
+    
+    if not str(full_path).startswith(str(thumb_dir.resolve())):
+        raise HTTPException(status_code=403, detail="禁止存取越界路徑")
+        
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="縮圖不存在")
+        
+    media_type = "image/webp" if filename.endswith(".webp") else "image/jpeg"
+    return FileResponse(str(full_path), media_type=media_type)
+
 @app.get("/api/data/scan")
 def scan_data():
     if not active_project["input_path"]:
@@ -381,16 +448,15 @@ def scan_data():
         
     input_dir = Path(active_project["input_path"])
     images = []
-    valid_extensions = {".jpg", ".png", ".bmp", ".jpeg"}
     
     # 掃描資料夾
     for root, dirs, files in os.walk(input_dir):
-        # 排除 runs 目錄，避免掃描到訓練輸出
-        if "runs" in root:
+        # 排除 runs 與快取目錄，避免掃描到快取縮圖與訓練輸出
+        if "runs" in root or ".vts_cache" in root:
             continue
         for f in files:
             ext = Path(f).suffix.lower()
-            if ext in valid_extensions:
+            if ext in VALID_IMAGE_EXTENSIONS:
                 rel_path = os.path.relpath(os.path.join(root, f), input_dir)
                 # 換成斜線以利 Web 使用
                 rel_path = rel_path.replace("\\", "/")
@@ -417,9 +483,12 @@ def scan_data():
     image_list = []
     for img in images:
         lbl_info = labels.get(img, {"label": "", "status": "pending"})
+        # 獲取縮圖 URL，若無快取縮圖則退回到原圖
+        thumb = make_thumb(input_dir, img)
         image_list.append({
             "path": img,
             "url": f"/images/{img}",
+            "thumb_url": thumb if thumb else f"/images/{img}",
             "label": lbl_info["label"],
             "status": lbl_info["status"]
         })
@@ -443,7 +512,6 @@ def scan_data():
 
 def safe_extract_zip(zip_file: zipfile.ZipFile, target_dir: Path) -> int:
     imported_count = 0
-    valid_extensions = {".jpg", ".png", ".bmp", ".jpeg"}
     target_root = target_dir.resolve()
 
     for member in zip_file.infolist():
@@ -454,7 +522,7 @@ def safe_extract_zip(zip_file: zipfile.ZipFile, target_dir: Path) -> int:
         if member_path.is_absolute() or ".." in member_path.parts:
             raise HTTPException(status_code=400, detail=f"ZIP 內含不安全路徑: {member.filename}")
 
-        if member_path.suffix.lower() not in valid_extensions:
+        if member_path.suffix.lower() not in VALID_IMAGE_EXTENSIONS:
             continue
 
         output_path = (target_root / member_path).resolve()
@@ -464,6 +532,15 @@ def safe_extract_zip(zip_file: zipfile.ZipFile, target_dir: Path) -> int:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with zip_file.open(member) as src, open(output_path, "wb") as dst:
             shutil.copyfileobj(src, dst)
+            
+        # 影像內容與損毀校驗
+        if not validate_image_file(output_path):
+            try:
+                output_path.unlink()
+            except Exception:
+                pass
+            continue
+            
         imported_count += 1
 
     return imported_count
@@ -478,7 +555,6 @@ async def import_data(files: List[UploadFile] = File(...)):
 
     imported_count = 0
     skipped_count = 0
-    valid_extensions = {".jpg", ".png", ".bmp", ".jpeg"}
 
     for file in files:
         filename = Path(file.filename or "").name
@@ -488,11 +564,20 @@ async def import_data(files: List[UploadFile] = File(...)):
             if ext == ".zip":
                 with zipfile.ZipFile(file.file) as zf:
                     imported_count += safe_extract_zip(zf, input_dir)
-            elif ext in valid_extensions:
+            elif ext in VALID_IMAGE_EXTENSIONS:
                 output_path = input_dir / filename
                 with open(output_path, "wb") as dst:
                     shutil.copyfileobj(file.file, dst)
-                imported_count += 1
+                
+                # 影像內容與損毀校驗
+                if not validate_image_file(output_path):
+                    try:
+                        output_path.unlink()
+                    except Exception:
+                        pass
+                    skipped_count += 1
+                else:
+                    imported_count += 1
             else:
                 skipped_count += 1
         except zipfile.BadZipFile:
@@ -504,7 +589,7 @@ async def import_data(files: List[UploadFile] = File(...)):
         "status": "success",
         "imported": imported_count,
         "skipped": skipped_count,
-        "message": f"已匯入 {imported_count} 張圖片"
+        "message": f"已成功匯入 {imported_count} 張圖片" + (f"，跳過 {skipped_count} 張不合法或損毀影像" if skipped_count > 0 else "")
     }
 
 @app.post("/api/labels/save")

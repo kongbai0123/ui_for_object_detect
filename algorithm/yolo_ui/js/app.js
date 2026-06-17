@@ -10,6 +10,7 @@ const App = {
     // 圖片資料庫
     images: [],
     currentImgIndex: -1,
+    galleryLimit: 120,
 
     // 標記暫存 (path -> { label: string, status: string })
     labelDataCache: {},
@@ -3378,9 +3379,14 @@ names:
         });
     },
 
-    renderExplorerGallery(filter = "all") {
+    renderExplorerGallery(filter = "all", appendMore = false) {
         const container = document.getElementById("gallery-container");
         if (!container) return;
+        
+        if (!appendMore) {
+            this.galleryLimit = 120;
+        }
+
         container.innerHTML = "";
 
         const filteredImgs = this.images.filter(img => {
@@ -3393,7 +3399,9 @@ names:
             return;
         }
 
-        filteredImgs.forEach(img => {
+        const imgsToRender = filteredImgs.slice(0, this.galleryLimit);
+
+        imgsToRender.forEach(img => {
             const indexInMaster = this.masterImageIndexLookup(img.path);
             const card = document.createElement("div");
             card.className = "gallery-card";
@@ -3411,7 +3419,7 @@ names:
             }
 
             card.innerHTML = `
-                <img src="${API_BASE}${img.url}" loading="lazy">
+                <img src="${API_BASE}${img.thumb_url || img.url}" loading="lazy">
                 <span class="status-badge ${img.status}">${img.status === 'done' ? '已標註' : (img.status === 'pending' ? '待確認' : '已忽略')}</span>
                 <div class="gallery-card-info">
                     <span>${img.path.split('/').pop()}</span>
@@ -3429,6 +3437,23 @@ names:
 
             container.appendChild(card);
         });
+
+        if (filteredImgs.length > this.galleryLimit) {
+            const loadMoreContainer = document.createElement("div");
+            loadMoreContainer.style.gridColumn = "1 / -1";
+            loadMoreContainer.style.textAlign = "center";
+            loadMoreContainer.style.padding = "20px 0";
+
+            const loadMoreBtn = document.createElement("button");
+            loadMoreBtn.className = "btn btn-secondary";
+            loadMoreBtn.innerHTML = `<i class="fa-solid fa-arrow-down-long"></i> 載入更多影像 (目前已載入 ${imgsToRender.length} / ${filteredImgs.length})`;
+            loadMoreBtn.onclick = () => {
+                this.galleryLimit += 120;
+                this.renderExplorerGallery(filter, true);
+            };
+            loadMoreContainer.appendChild(loadMoreBtn);
+            container.appendChild(loadMoreContainer);
+        }
     },
 
     masterImageIndexLookup(path) {
