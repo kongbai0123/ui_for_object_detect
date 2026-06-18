@@ -229,6 +229,10 @@ const App = {
 
         // 8. 綁定標註模式相關事件與初始化 UI
         this.safeSetup("setupAnnotationModeEvents", () => this.setupAnnotationModeEvents());
+
+        window.addEventListener("resize", () => {
+            this.syncAutoLabelPreviewOverlay();
+        });
     },
 
     setupBackendHeartbeat() {
@@ -252,7 +256,7 @@ const App = {
         if (!themeBtn) return;
 
         // 從 localStorage 讀取主題設定，預設為 dark
-        const savedTheme = localStorage.getItem("yolo-ui-theme") || "dark";
+        const savedTheme = localStorage.getItem("yolo-ui-theme") || "light";
         
         if (savedTheme === "light") {
             document.body.classList.add("light-mode");
@@ -312,9 +316,13 @@ const App = {
 
         // 綁定 4 大流程卡片的進入按鈕
         document.querySelectorAll(".btn-enter-flow").forEach(btn => {
-            btn.addEventListener("click", (e) => {
+            btn.addEventListener("click", async (e) => {
                 const targetView = e.currentTarget.getAttribute("data-target");
                 const targetTab = e.currentTarget.getAttribute("data-tab");
+                if (targetView === "annotation-view" && (!targetTab || targetTab === "ann-manual")) {
+                    await this.openAnnotationEditor();
+                    return;
+                }
                 this.switchView(targetView, targetTab);
             });
         });
@@ -515,8 +523,6 @@ const App = {
             }
         } else if (tabName === "ann-review") {
             this.renderReviewGallery();
-        } else if (tabName === "ann-verified") {
-            this.renderVerifiedGallery();
         } else if (tabName === "ann-unlabeled") {
             this.renderUnlabeledGallery();
         } else if (tabName === "ann-quality") {
@@ -705,7 +711,7 @@ const App = {
         });
         this.bindClick("btn-studio-ds-checker", () => this.openDatasetCheckerModal());
         this.bindClick("btn-studio-ds-splitter", () => this.openDatasetSplitterModal());
-        this.bindClick("btn-studio-label", () => this.switchView("label-view"));
+        this.bindClick("btn-studio-label", () => this.openAnnotationEditor());
         this.bindClick("btn-studio-ds-aug", () => this.showProPreview(
             "Augmentation Studio (資料增強可視化)",
             "支援 Resize, Flip, Rotation, HSV 調整, Mosaic 與 MixUp 等 15 種影像資料增強。Pro 版本包含原圖/增強圖即時左右對照預覽與參數調整滑桿，並可一鍵套用至訓練設定檔。"
@@ -782,6 +788,15 @@ const App = {
 
         // 載入並渲染專案歷史紀錄
         this.renderProjectHistory();
+
+        try {
+            const activeProject = await API.getActiveProject();
+            if (activeProject && activeProject.status === "active" && activeProject.input_path) {
+                this.onProjectLoaded(activeProject);
+            }
+        } catch (err) {
+            console.info("[PROJECT] No active backend project to restore.");
+        }
     },
 
     onProjectLoaded(project) {
@@ -1215,8 +1230,6 @@ const App = {
             const activeAnnTab = document.querySelector("#annotation-view .sidebar-menu li.active")?.getAttribute("data-tab");
             if (activeAnnTab === "ann-review") {
                 this.renderReviewGallery();
-            } else if (activeAnnTab === "ann-verified") {
-                this.renderVerifiedGallery();
             } else if (activeAnnTab === "ann-unlabeled") {
                 this.renderUnlabeledGallery();
             } else if (activeAnnTab === "ann-quality") {
@@ -1477,8 +1490,30 @@ const App = {
         }
     },
 
+    ensureImageLabelerReady() {
+        const canvas = document.getElementById("label-canvas");
+        const canvasContainer = document.getElementById("canvas-container-div");
+        if (!canvas || !canvasContainer || typeof ImageLabeler === "undefined") {
+            return false;
+        }
+
+        if (!ImageLabeler.canvas || !ImageLabeler.ctx || ImageLabeler.canvas !== canvas) {
+            ImageLabeler.init("label-canvas", "canvas-container-div");
+        }
+
+        if (ImageLabeler.setClassColors) {
+            ImageLabeler.setClassColors(this.classes || []);
+        }
+
+        return true;
+    },
+
     loadImgToLabelView(index) {
         if (index < 0 || index >= this.images.length) return;
+        if (!this.ensureImageLabelerReady()) {
+            showToast("標註畫布尚未就緒，請稍後再試。", "warn");
+            return;
+        }
 
         // 切換圖片時才保存上一張；載入同一張候選圖時不可用尚未載入的空畫布覆蓋 AI 標註。
         if (this.currentImgIndex !== index) {
@@ -2279,11 +2314,15 @@ names:
         body.innerHTML = "";
 
         // 計算統計
-        let done = 0, pending = 0, ignored = 0;
+        let done = 0, pending = 0, ignored = 0, trainableLabels = 0;
         Object.values(this.labelDataCache).forEach(c => {
             if (c.status === "done") done++;
             else if (c.status === "pending" || this.isAiPendingLabel(c)) pending++;
             else if (c.status === "ignore") ignored++;
+
+            if (this.hasValidBoxes(c.label)) {
+                trainableLabels++;
+            }
         });
 
         const total = this.images.length;
@@ -2298,7 +2337,15 @@ names:
             { name: "Output 輸出目錄", status: "pass", desc: "runs/ 目錄具備寫入權限" }
         ];
 
-        let canTrain = total > 0 && classesCount >= 2 && done > 0;
+        checks.splice(3, 0, {
+            name: "訓練可用標註",
+            status: trainableLabels > 0 ? "pass" : "fail",
+            desc: trainableLabels > 0
+                ? `可用標註影像 ${trainableLabels} 張，包含已確認與候選標註。`
+                : "目前沒有任何可用標註，請先完成手動或自動標註。"
+        });
+
+        let canTrain = total > 0 && classesCount >= 2 && trainableLabels > 0;
 
         checks.forEach(c => {
             const row = document.createElement("div");
@@ -2415,6 +2462,7 @@ names:
             // 初始化 Chart
             TrainMonitor.init("train-curve-canvas");
             TrainMonitor.reset(epochs);
+            this._mockTrainingNoticeShown = false;
 
             // 初始化日誌終端
             const consoleBox = document.getElementById("train-logs-console");
@@ -2432,6 +2480,10 @@ names:
     async pollTrainingStatus() {
         try {
             const status = await API.getTrainStatus();
+            if (status.mock_mode && !this._mockTrainingNoticeShown) {
+                this._mockTrainingNoticeShown = true;
+                showToast("目前訓練流程為模擬模式，指標與產物不是實際模型訓練結果。", "warn");
+            }
 
             if (status.status === "training") {
                 // 1. 更新進度環
@@ -2656,8 +2708,7 @@ names:
 
                 // 點擊錯誤圖片，自動跳轉到標籤頁並載入該圖片以利修正
                 card.addEventListener("click", () => {
-                    this.loadImgToLabelView(s.idx);
-                    this.switchView("label-view");
+                    this.openAnnotationEditor(s.idx);
                     showToast(`已載入圖片: ${s.path.split('/').pop()} 供您修正`, "info");
                 });
 
@@ -3001,6 +3052,9 @@ names:
         
         try {
             const res = await API.runInference(model, conf, this.inferenceState.currentFile);
+            if (res.mock_mode) {
+                showToast("目前推論結果為 mock 模式，框位與信心值為模擬資料。", "warn");
+            }
             this.inferenceState.predictions = res.predictions;
             
             // 更新指標
@@ -3508,8 +3562,7 @@ names:
 
             card.addEventListener("click", () => {
                 if (indexInMaster !== -1) {
-                    this.loadImgToLabelView(indexInMaster);
-                    this.switchView("label-view");
+                    this.openAnnotationEditor(indexInMaster);
                     showToast(`已跳轉至: ${img.path.split('/').pop()}`, "info");
                 }
             });
@@ -3537,6 +3590,27 @@ names:
 
     masterImageIndexLookup(path) {
         return this.images.findIndex(img => img.path === path);
+    },
+
+    async openAnnotationEditor(index = null) {
+        this.switchView("annotation-view");
+        this.switchWorkspaceTab("annotation-view", "ann-manual");
+
+        if (this.projectLoaded && (!this.images || this.images.length === 0)) {
+            await this.scanDataset();
+        }
+
+        if (typeof index === "number" && index >= 0) {
+            this.loadImgToLabelView(index);
+        } else if (this.currentImgIndex >= 0) {
+            this.loadImgToLabelView(this.currentImgIndex);
+        } else if (this.images && this.images.length > 0) {
+            this.currentImgIndex = 0;
+            this.loadImgToLabelView(0);
+        } else {
+            const placeholder = document.getElementById("canvas-empty-overlay");
+            if (placeholder) placeholder.style.display = "flex";
+        }
     },
 
     // ==========================================================================
@@ -4271,7 +4345,7 @@ names:
                         await this.scanDataset();
                         this.renderAutoLabelResultReport(status);
 
-                        const totalBoxes = status.total_boxes || 0;
+                        const totalBoxes = status.total_annotations || status.total_boxes || 0;
                         const detectedImages = status.detected_images || 0;
 
                         if (totalBoxes > 0) {
@@ -4321,7 +4395,7 @@ names:
         setText("autolabel-detected-count", status.detected_images || 0);
         setText("autolabel-empty-count", status.empty_images || 0);
         setText("autolabel-failed-count", status.failed || 0);
-        setText("autolabel-total-boxes", status.total_boxes || 0);
+        setText("autolabel-total-boxes", status.total_annotations || status.total_boxes || 0);
 
         // 目前檔名
         const fileName = status.current_image ? status.current_image.split("/").pop() : (
@@ -4333,6 +4407,19 @@ names:
         const img = document.getElementById("autolabel-preview-img");
         const placeholder = document.getElementById("autolabel-preview-placeholder");
         if (img && status.current_image_url) {
+            if (!img.dataset.autolabelBound) {
+                img.addEventListener("load", () => {
+                    this.syncAutoLabelPreviewOverlay();
+                    const overlayOnLoad = document.getElementById("autolabel-preview-overlay");
+                    if (overlayOnLoad) {
+                        overlayOnLoad.innerHTML = "";
+                        if (this.autolabelLastPredictions && this.autolabelLastPredictions.length > 0) {
+                            this.renderAutoLabelBboxes(this.autolabelLastPredictions, overlayOnLoad);
+                        }
+                    }
+                });
+                img.dataset.autolabelBound = "1";
+            }
             img.src = status.current_image_url + "?t=" + Date.now();
             img.style.display = "block";
             if (placeholder) placeholder.style.display = "none";
@@ -4344,6 +4431,8 @@ names:
         // Bbox 繪製
         const overlay = document.getElementById("autolabel-preview-overlay");
         if (overlay) {
+            this.autolabelLastPredictions = status.current_predictions || [];
+            this.syncAutoLabelPreviewOverlay();
             overlay.innerHTML = "";
             if (status.current_predictions && status.current_predictions.length > 0) {
                 this.renderAutoLabelBboxes(status.current_predictions, overlay);
@@ -4359,6 +4448,23 @@ names:
         }
     },
 
+    syncAutoLabelPreviewOverlay() {
+        const container = document.getElementById("autolabel-preview-container");
+        const img = document.getElementById("autolabel-preview-img");
+        const overlay = document.getElementById("autolabel-preview-overlay");
+        if (!container || !img || !overlay || img.style.display === "none") return;
+
+        const containerRect = container.getBoundingClientRect();
+        const imgRect = img.getBoundingClientRect();
+        const width = Math.max(0, Math.round(imgRect.width));
+        const height = Math.max(0, Math.round(imgRect.height));
+
+        overlay.style.width = `${width}px`;
+        overlay.style.height = `${height}px`;
+        overlay.style.left = `${Math.max(0, Math.round(imgRect.left - containerRect.left))}px`;
+        overlay.style.top = `${Math.max(0, Math.round(imgRect.top - containerRect.top))}px`;
+    },
+
     renderAutoLabelBboxes(predictions, containerEl) {
         // 使用百分比絕對定位畫出 bbox 或 SVG 畫出 polygon
         const COLORS = ["#f97316", "#3b82f6", "#10b981", "#ef4444", "#a855f7", "#eab308", "#06b6d4"];
@@ -4367,7 +4473,9 @@ names:
         const hasPolygon = predictions.some(pred => pred.type === "polygon" || !!pred.points);
         if (hasPolygon) {
             svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-            svgEl.setAttribute("style", "position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;");
+            svgEl.setAttribute("viewBox", "0 0 1 1");
+            svgEl.setAttribute("preserveAspectRatio", "none");
+            svgEl.setAttribute("style", "position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden;");
             containerEl.appendChild(svgEl);
         }
 
@@ -4377,10 +4485,15 @@ names:
 
             if (isPolygon && pred.points && pred.points.length > 0) {
                 // 利用 SVG polygon 繪製多邊形
+                const ptsStr = pred.points.map(pt => `${pt[0]},${pt[1]}`).join(" ");
+                const outline = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                outline.setAttribute("points", ptsStr);
+                outline.setAttribute("style", "fill: none; stroke: rgba(0, 0, 0, 0.82); stroke-width: 5; vector-effect: non-scaling-stroke;");
+                svgEl.appendChild(outline);
+
                 const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-                const ptsStr = pred.points.map(pt => `${pt[0] * 100},${pt[1] * 100}`).join(" ");
                 poly.setAttribute("points", ptsStr);
-                poly.setAttribute("style", `fill: ${color}22; stroke: ${color}; stroke-width: 2; vector-effect: non-scaling-stroke;`);
+                poly.setAttribute("style", `fill: ${color}66; stroke: ${color}; stroke-width: 3; vector-effect: non-scaling-stroke;`);
                 svgEl.appendChild(poly);
 
                 // 標籤文字 (使用 HTML 絕對定位在第一個點上)
@@ -4392,9 +4505,11 @@ names:
                     `top: ${firstPt[1] * 100}%`,
                     `background: ${color}`,
                     "color: #fff",
-                    "font-size: 10px",
-                    "padding: 1px 4px",
-                    "border-radius: 3px",
+                    "font-size: 11px",
+                    "font-weight: 800",
+                    "padding: 2px 6px",
+                    "border-radius: 4px",
+                    "box-shadow: 0 0 0 2px rgba(0,0,0,0.72)",
                     "white-space: nowrap",
                     "transform: translate(-50%, -100%)",
                     "pointer-events: none",
@@ -4580,8 +4695,7 @@ names:
 
             card.addEventListener("click", () => {
                 if (indexInMaster !== -1) {
-                    this.loadImgToLabelView(indexInMaster);
-                    this.switchView("label-view");
+                    this.openAnnotationEditor(indexInMaster);
                     showToast(`已載入: ${img.path.split('/').pop()}`, "info");
                 }
             });
@@ -4725,8 +4839,7 @@ names:
                 link.addEventListener("click", (e) => {
                     const idx = parseInt(e.target.getAttribute("data-index"));
                     if (idx !== -1 && !isNaN(idx)) {
-                        this.loadImgToLabelView(idx);
-                        this.switchView("label-view");
+                        this.openAnnotationEditor(idx);
                     }
                 });
             });
@@ -4762,7 +4875,7 @@ names:
             if (el) el.textContent = val;
         };
 
-        const totalBoxes = status.total_boxes || 0;
+        const totalBoxes = status.total_annotations || status.total_boxes || 0;
         const detectedImages = status.detected_images || 0;
         const emptyImages = status.empty_images || 0;
         const processed = status.processed || 0;
@@ -4946,11 +5059,8 @@ names:
             return;
         }
 
-        // 進入標註主畫布
-        this.switchView("label-view");
-
-        // 載入圖片與 AI Bbox
-        this.loadImgToLabelView(masterIndex);
+        // 進入標註主畫布並載入圖片與 AI Bbox
+        this.openAnnotationEditor(masterIndex);
 
         // 顯示與更新 Review UI
         this.enableReviewEditorUi();
@@ -5078,7 +5188,7 @@ names:
             return;
         }
 
-        this.loadImgToLabelView(masterIndex);
+        this.openAnnotationEditor(masterIndex);
         this.updateReviewProgressText();
     },
 
@@ -5191,6 +5301,9 @@ names:
             project_name: this.projectName,
             task_type: this.taskType || "Detection",
             annotation_type: (this.taskType === "Segmentation" || this.taskType === "segmentation") ? "polygon" : "bbox",
+            annotation_mode: this.annotationMode || "manual",
+            review_mode: this.reviewMode,
+            current_review_index: this.currentReviewIndex,
             input_path: this.inputPath,
             output_path: document.getElementById("output-path-display")?.value || (this.inputPath ? `${this.inputPath}/runs` : ""),
             classes: this.classes,
@@ -5227,10 +5340,10 @@ names:
             const labelStr = ImageLabeler.getLabelString();
             const img = this.images[this.currentImgIndex];
             if (img) {
-                this.labelDataCache[img.path] = {
+                this.labelDataCache[img.path] = this.makeLabelCacheEntry(img, {
                     label: labelStr,
                     status: img.status || "done"
-                };
+                });
             }
         }
         
@@ -5289,6 +5402,7 @@ names:
                 this.inputPath = project.input_path;
                 this.classes = project.classes;
                 this.taskType = project.task_type || "Detection";
+                this.annotationMode = session.annotation_mode || this.annotationMode || "manual";
 
                 // 更新頂部專案 Badge
                 this.html("active-project-badge", `
@@ -5356,6 +5470,21 @@ names:
                 // 恢復當前圖片索引
                 if (session.current_image_index >= 0 && this.images && this.images.length > session.current_image_index) {
                     this.currentImgIndex = session.current_image_index;
+                }
+
+                if (session.review_mode) {
+                    this.reviewMode = true;
+                    this.reviewQueue = this.getPendingReviewItems();
+                    this.currentReviewIndex = Math.min(
+                        Math.max(session.current_review_index || 0, 0),
+                        Math.max(this.reviewQueue.length - 1, 0)
+                    );
+                    this.enableReviewEditorUi();
+                } else {
+                    this.reviewMode = false;
+                    this.reviewQueue = [];
+                    this.currentReviewIndex = -1;
+                    this.enableReviewEditorUi();
                 }
 
                 // 切換回儲存時的分頁與 Tab

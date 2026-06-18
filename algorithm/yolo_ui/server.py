@@ -156,7 +156,8 @@ train_status = {
     "best_accuracy": 0.0,
     "elapsed_time": 0,
     "remaining_time": 0,
-    "log": []
+    "log": [],
+    "mock_mode": False
 }
 
 train_thread: Optional[threading.Thread] = None
@@ -864,7 +865,8 @@ def start_train(config: TrainConfig):
         "best_accuracy": 0.0,
         "elapsed_time": 0,
         "remaining_time": 0,
-        "log": initial_log
+        "log": initial_log,
+        "mock_mode": False
     }
     
     stop_train_event.clear()
@@ -885,6 +887,7 @@ def start_train(config: TrainConfig):
         # 初始化適配器狀態
         train_status = current_trainer.get_status()
         train_status["log"] = initial_log + train_status["log"]
+        train_status["mock_mode"] = False
     except Exception as e:
         # Fallback 到內置的 simulate_training_job 進行一般性模擬
         print(f"[TRAIN] 無法使用工廠創建適配器 ({e})，Fallback 使用一般模擬。")
@@ -895,6 +898,7 @@ def start_train(config: TrainConfig):
             daemon=True
         )
         train_thread.start()
+        train_status["mock_mode"] = True
         
     return {"status": "success", "output_dir": str(output_folder)}
 
@@ -962,7 +966,8 @@ def shutdown_server():
 transform_status = {
     "status": "idle",  # idle, exporting, completed, error
     "log": [],
-    "output_file": ""
+    "output_file": "",
+    "mock_mode": True
 }
 
 class ExportPayload(BaseModel):
@@ -1122,7 +1127,8 @@ async def run_inference(
         "predictions": predictions,
         "inference_time": f"{inf_time_ms:.1f} ms",
         "size": f"{width} x {height}",
-        "url": "/images/temp_inference.jpg?t=" + str(int(time.time()))
+        "url": "/images/temp_inference.jpg?t=" + str(int(time.time())),
+        "mock_mode": True
     }
 
 class SwitchProjectRequest(BaseModel):
@@ -2253,6 +2259,7 @@ def run_auto_label_worker(task_id: str, payload: AutoLabelPayload):
             task["success"] += 1
             task["detected_images"] += 1
             task["total_boxes"] += box_count
+            task["total_annotations"] += box_count
             for box in boxes_json:
                 cls_lbl = box.get("label", "unknown")
                 task["class_counts"][cls_lbl] = task["class_counts"].get(cls_lbl, 0) + 1
@@ -2301,6 +2308,7 @@ def start_auto_label(payload: AutoLabelPayload):
         "detected_images": 0,
         "empty_images": 0,
         "total_boxes": 0,
+        "total_annotations": 0,
         "class_counts": {},
         "current_image": "",
         "current_image_url": "",
@@ -2417,6 +2425,8 @@ def create_label_version(payload: Dict):
         "version": version_id,
         "name": version_name,
         "total_boxes": total_boxes,
+        "total_annotations": total_boxes,
+        "total_annotations": total_boxes,
         "verified_images": verified_images,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "file": backup_file_name

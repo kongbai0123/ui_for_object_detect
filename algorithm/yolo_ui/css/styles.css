@@ -3828,6 +3828,585 @@ body:has(.workspace-view.active) .app-main {
 }
 
 /* ==========================================================================
+   2026-06 Layout Refresh
+   Scope: home / database / annotation / distribution views shown in PPT
+   ========================================================================== */
+body.light-mode {
+    --ppt-bg: #f4f7fc;
+    --ppt-panel: #ffffff;
+    --ppt-panel-soft: #f7f9fe;
+    --ppt-border: #dbe4f0;
+    --ppt-text: #1f2840;
+    --ppt-subtle: #6d7894;
+    --ppt-shadow: 0 14px 32px rgba(71, 85, 119, 0.08);
+    background:
+        linear-gradient(180deg, #f8faff 0%, #f2f6fd 100%);
+    color: var(--ppt-text);
+}
+
+body.light-mode .app-header {
+    padding: 10px 18px;
+    background: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid rgba(115, 130, 163, 0.18);
+    box-shadow: 0 8px 22px rgba(80, 94, 128, 0.05);
+}
+
+body.light-mode .logo-title,
+body.light-mode .logo {
+    color: #213655;
+}
+
+body.light-mode .app-main {
+    background: var(--ppt-bg);
+}
+
+body.light-mode .glass-panel {
+    background: var(--ppt-panel);
+    border: 1px solid var(--ppt-border);
+    box-shadow: var(--ppt-shadow);
+    border-radius: 16px;
+}
+
+body.light-mode .btn {
+    border-radius: 12px;
+}
+
+body.light-mode .btn-secondary {
+    background: #f2f5fb;
+    color: #33415f;
+    border: 1px solid #d9e2f0;
+}
+
+body.light-mode .btn-secondary:hover {
+    background: #eaf0f9;
+}
+
+body.light-mode .btn-primary {
+    background: linear-gradient(90deg, #137cab 0%, #6d31d5 100%);
+    border: none;
+    box-shadow: 0 8px 18px rgba(72, 96, 184, 0.18);
+}
+
+body.light-mode input[type="text"],
+body.light-mode input[type="number"],
+body.light-mode select,
+body.light-mode textarea {
+    background: #fbfcff;
+    border-color: #d8e1ef;
+    color: #27314d;
+}
+
+body.light-mode .project-info-badge {
+    background: #f7f9fd;
+    border-color: #dde5f0;
+    color: #60708d;
+}
+
+body.light-mode .workspace-view.app-view {
+    height: calc(100vh - 64px);
+}
+
+body.light-mode .workspace-layout {
+    grid-template-columns: 176px minmax(0, 1fr) 214px;
+    background: var(--ppt-bg);
+}
+
+body.light-mode .workspace-main {
+    padding: 18px 16px;
+    background: var(--ppt-bg);
+}
+
+body.light-mode .workspace-sidebar,
+body.light-mode .workspace-guide {
+    background: #ffffff !important;
+    border-color: rgba(121, 135, 168, 0.18) !important;
+    box-shadow: none !important;
+}
+
+body.light-mode .workspace-sidebar {
+    padding: 14px 0;
+}
+
+body.light-mode .workspace-guide {
+    padding: 14px 14px 18px;
+    gap: 14px;
+}
+
+body.light-mode .sidebar-header {
+    padding: 0 18px 16px 18px;
+    font-size: 1rem;
+}
+
+body.light-mode .sidebar-menu {
+    padding: 10px 8px;
+}
+
+body.light-mode .menu-item {
+    min-height: 48px;
+    align-items: flex-start;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+body.light-mode .menu-item.active {
+    background: #ecf9ff !important;
+    border: 1px solid #bde9fb !important;
+    color: #0f7ea4 !important;
+    box-shadow: inset 0 0 0 1px rgba(0, 175, 239, 0.04);
+}
+
+body.light-mode .workspace-tab-header {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+    border: none;
+    border-radius: 0 0 14px 14px;
+    background: #edf2ff;
+    min-width: 340px;
+}
+
+body.light-mode .workspace-tab-header h2 {
+    font-size: 1.05rem;
+    color: #1d2940;
+}
+
+body.light-mode .workspace-tab-header p {
+    margin-top: 0;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: #7a86a1;
+    max-width: 620px;
+}
+
+body.light-mode .guide-header {
+    font-size: 0.96rem;
+}
+
+body.light-mode .guide-section h4 {
+    font-size: 0.8rem;
+}
+
+body.light-mode .guide-list,
+body.light-mode .guide-warning-item,
+body.light-mode .guide-tip,
+body.light-mode .status-info p {
+    font-size: 0.72rem;
+}
+
+body.light-mode #home-view .studio-container {
+    max-width: none;
+    width: 100%;
+    padding: 8px 18px 22px 68px;
+    gap: 14px;
+}
+
+body.light-mode #home-view .studio-header-title {
+    max-width: 658px !important;
+    background: linear-gradient(180deg, #f7f9ff 0%, #eef3ff 100%);
+    border: 1px solid #e1e9f7;
+    border-radius: 0 0 18px 18px;
+    padding: 18px 28px 16px;
+    box-shadow: inset 0 -1px 0 rgba(255,255,255,0.45);
+}
+
+body.light-mode #home-view .studio-header-title h1 {
+    font-size: 1.92rem !important;
+    margin-bottom: 2px;
+    font-weight: 800;
+    background: linear-gradient(180deg, #2b67b7 0%, #244f92 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: none;
+}
+
+body.light-mode #home-view .studio-header-title p {
+    max-width: 552px;
+    font-size: 0.84rem !important;
+    line-height: 1.45;
+    font-weight: 600;
+    color: #7e89a3;
+}
+
+body.light-mode .mode-toggle-wrapper {
+    margin: 2px auto 12px !important;
+}
+
+body.light-mode .mode-toggle-btn {
+    min-width: 138px;
+    height: 40px;
+    padding: 0 20px !important;
+    border-radius: 999px !important;
+    background: #f0f3fa;
+    border: 1px solid #d8e2ef;
+    color: #6a7792;
+    box-shadow: none;
+}
+
+body.light-mode .mode-toggle-btn.active {
+    color: #ffffff;
+    background: linear-gradient(90deg, #0d89b8 0%, #0d7fa9 55%, #274caa 100%);
+}
+
+body.light-mode .flow-cards-container {
+    gap: 16px;
+    margin-top: 4px;
+}
+
+body.light-mode .flow-card {
+    min-height: 452px;
+    padding: 24px 22px 20px;
+    background: #ffffff;
+    border: 1px solid #dfe7f2;
+    border-radius: 20px;
+    box-shadow: 0 10px 24px rgba(58, 74, 112, 0.07);
+}
+
+body.light-mode .flow-card:hover {
+    transform: translateY(-2px);
+    border-color: #cfd9e9;
+    box-shadow: 0 14px 30px rgba(58, 74, 112, 0.1);
+}
+
+body.light-mode .flow-card-icon {
+    font-size: 2.35rem;
+    color: #1b8ab8;
+}
+
+body.light-mode .flow-card-content h3 {
+    font-size: 1.16rem;
+    font-weight: 800;
+    line-height: 1.15;
+    color: #1e2a40;
+}
+
+body.light-mode .flow-card-sub {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #a0a9bd;
+}
+
+body.light-mode .flow-card-desc {
+    height: 72px;
+    font-size: 0.86rem;
+    line-height: 1.45;
+    font-weight: 600;
+    color: #5f6e8b;
+}
+
+body.light-mode .flow-card-metrics {
+    background: transparent;
+    border-radius: 0;
+    padding: 10px 2px 2px;
+    color: #44516c;
+}
+
+body.light-mode .flow-card-metrics .metric-row {
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+body.light-mode .flow-card-guide {
+    min-height: 34px;
+    margin-top: 8px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #6d7892;
+}
+
+body.light-mode .btn-enter-flow {
+    border-radius: 14px;
+    height: 50px;
+    font-size: 0.98rem;
+    font-weight: 800;
+}
+
+body.light-mode #project-history-section {
+    position: fixed;
+    left: 0;
+    top: 64px;
+    width: 52px;
+    height: calc(100vh - 88px);
+    z-index: 20;
+    margin: 0 !important;
+    padding: 14px 10px !important;
+    border-radius: 0 18px 18px 0;
+    overflow: hidden;
+    transition: width 0.25s ease, box-shadow 0.25s ease;
+    box-shadow: 10px 0 24px rgba(62, 83, 120, 0.08);
+}
+
+body.light-mode #project-history-section:hover {
+    width: 272px;
+}
+
+body.light-mode #project-history-section .section-title {
+    white-space: nowrap;
+    border-bottom: none;
+    padding-bottom: 0;
+    font-size: 0.95rem;
+    overflow: hidden;
+    color: transparent;
+}
+
+body.light-mode #project-history-section .section-title i {
+    font-size: 0.95rem;
+    color: #0d89b8;
+}
+
+body.light-mode #project-history-section:hover .section-title {
+    color: var(--ppt-text);
+}
+
+body.light-mode #project-history-section #project-history-list {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+body.light-mode #project-history-section:hover #project-history-list {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+body.light-mode #database-view .workspace-main,
+body.light-mode #distribution-view .workspace-main,
+body.light-mode #annotation-view .workspace-main {
+    padding-top: 0;
+}
+
+body.light-mode #database-view [data-tab-content="db-manage"] > div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1.15fr 0.9fr !important;
+    gap: 12px !important;
+    margin-top: 12px !important;
+}
+
+body.light-mode #database-view [data-tab-content="db-manage"] > div[style*="grid-template-columns: 280px 1fr"] {
+    grid-template-columns: 162px minmax(0, 1fr) !important;
+    gap: 12px !important;
+    height: calc(100vh - 266px) !important;
+    min-height: 420px !important;
+    margin-top: 12px !important;
+}
+
+body.light-mode #database-view .chart-container-div {
+    background: #ffffff;
+    border: 1px solid #dfe6f1;
+}
+
+body.light-mode #database-view .gallery-scroll-container {
+    grid-template-columns: repeat(auto-fill, minmax(114px, 1fr)) !important;
+    gap: 10px !important;
+}
+
+body.light-mode #annotation-view [data-tab-content="ann-manual"] > .label-workspace {
+    grid-template-columns: 48px minmax(0, 1fr) 200px !important;
+    gap: 10px !important;
+}
+
+body.light-mode #annotation-view [data-tab-content="ann-manual"] .workspace-tab-header {
+    display: none;
+}
+
+body.light-mode #annotation-view .workspace-main {
+    padding: 0 10px 12px !important;
+}
+
+body.light-mode #annotation-view .canvas-panel {
+    border-radius: 18px;
+    padding: 10px !important;
+}
+
+body.light-mode #annotation-view .label-toolbar {
+    border-radius: 18px;
+    padding: 8px 6px !important;
+    gap: 6px;
+}
+
+body.light-mode #annotation-view .tool-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+}
+
+body.light-mode #annotation-view #canvas-container-div {
+    border-radius: 14px !important;
+}
+
+body.light-mode #annotation-view .canvas-controls {
+    padding: 4px 2px 0;
+}
+
+body.light-mode #annotation-view .label-sidebar {
+    border-radius: 18px;
+}
+
+body.light-mode #annotation-view [data-tab-content="ann-auto"] > .glass-panel:first-of-type {
+    max-width: none !important;
+    margin-top: 12px !important;
+    display: grid;
+    grid-template-columns: 1fr 0.92fr;
+    gap: 18px 22px;
+    align-items: start;
+}
+
+body.light-mode #annotation-view [data-tab-content="ann-auto"] > .glass-panel:first-of-type .section-title,
+body.light-mode #annotation-view [data-tab-content="ann-auto"] > .glass-panel:first-of-type .action-row {
+    grid-column: 1 / -1;
+}
+
+body.light-mode #annotation-view [data-tab-content="ann-auto"] > .glass-panel:first-of-type .form-group:nth-of-type(1),
+body.light-mode #annotation-view [data-tab-content="ann-auto"] > .glass-panel:first-of-type .form-group:nth-of-type(2),
+body.light-mode #annotation-view [data-tab-content="ann-auto"] > .glass-panel:first-of-type .form-group:nth-of-type(3) {
+    grid-column: 1;
+}
+
+body.light-mode #annotation-view [data-tab-content="ann-auto"] > .glass-panel:first-of-type .form-group:nth-of-type(4),
+body.light-mode #annotation-view [data-tab-content="ann-auto"] > .glass-panel:first-of-type .form-group:nth-of-type(5) {
+    grid-column: 2;
+}
+
+body.light-mode #autolabel-monitor,
+body.light-mode #autolabel-result-report {
+    max-width: none !important;
+    margin-top: 12px !important;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"] > .glass-panel:nth-of-type(1),
+body.light-mode #distribution-view [data-tab-content="dist-split"] > .glass-panel:nth-of-type(2) {
+    max-width: none !important;
+    margin-top: 12px !important;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] {
+    display: grid !important;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 12px;
+    align-content: start;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"] .workspace-tab-header {
+    grid-column: 1 / -1;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"] .workspace-tab-header {
+    margin-bottom: 2px;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"] > .glass-panel {
+    min-height: 334px;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"] > .glass-panel .section-title {
+    font-size: 0.95rem;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"] > .glass-panel .splitter-sliders {
+    gap: 12px !important;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"] > .glass-panel input[type="range"] {
+    margin-top: 2px;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"] > .glass-panel .help-text {
+    font-size: 0.74rem;
+    line-height: 1.45;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1.06fr;
+    gap: 12px;
+    align-content: start;
+    margin-top: 12px;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .workspace-tab-header,
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] > .glass-panel:last-of-type {
+    display: none !important;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] > div[style*="grid-template-columns: 1fr 1fr"] {
+    display: contents !important;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] > .glass-panel,
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] > div[style*="grid-template-columns: 1fr 1fr"] > .glass-panel {
+    max-width: none !important;
+    min-height: 186px;
+    margin-top: 0 !important;
+    padding: 16px 16px 14px !important;
+    display: flex;
+    flex-direction: column;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"]::before {
+    content: "數據品質分析與資料增強\A分析類別不平衡與來源分布，並提供資料洩漏與場景補強建議。";
+    grid-column: 1 / -1;
+    white-space: pre-line;
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: #223452;
+    line-height: 1.4;
+    margin: 6px 0 -2px;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .section-title {
+    font-size: 0.92rem;
+    font-weight: 800;
+    min-height: 52px;
+    display: flex;
+    align-items: flex-start;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .form-group,
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .info-list,
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .guide-warning-item {
+    flex: 1 1 auto;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .radio-group,
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .info-item,
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .guide-warning-item span {
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] > .glass-panel:nth-of-type(2) .section-title {
+    min-height: auto;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] > .glass-panel:nth-of-type(2) .btn {
+    margin-top: 14px;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] > div[style*="grid-template-columns: 1fr 1fr"] {
+    order: 2;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] > .glass-panel:nth-of-type(2) {
+    order: 3;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-split"][style*="display: block"] + [data-tab-content="dist-aug"][style*="display: none"] .guide-warning-item.info {
+    margin-top: 6px !important;
+    padding: 10px 12px;
+}
+
+body.light-mode #distribution-view [data-tab-content="dist-export"] > .glass-panel {
+    max-width: 860px !important;
+    margin-top: 12px !important;
+}
+
+body.light-mode #distribution-view .yolo-struct-container {
+    min-height: 292px !important;
+}
+
+/* ==========================================================================
    首頁標註模式大按鈕樣式
    ========================================================================== */
 .mode-toggle-btn {

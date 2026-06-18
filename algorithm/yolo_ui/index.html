@@ -35,7 +35,7 @@
     </style>
 </head>
 
-<body class="dark-mode">
+<body class="light-mode">
     <div class="app-container">
         <!-- 頂部導航欄 -->
         <header class="app-header">
@@ -836,20 +836,6 @@
                                 <div class="section-title"><i class="fa-solid fa-user-check"></i> 待審核標註佇列 (Pending Review)</div>
                                 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; max-height: 400px; overflow-y: auto;" id="review-gallery-container">
                                     <div class="empty-hint">無待審核的候選標籤。</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tab: Verified -->
-                        <div class="workspace-tab-content" data-tab-content="ann-verified" style="display: none;">
-                            <div class="workspace-tab-header">
-                                <h2>已確認標註 (Verified Labels)</h2>
-                                <p>顯示所有經過人工審核確認的黃金標準數據集，隨時可進行樣本分配。</p>
-                            </div>
-                            <div class="glass-panel" style="margin-top: 16px;">
-                                <div class="section-title"><i class="fa-solid fa-check-double"></i> Verified Pool</div>
-                                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; max-height: 400px; overflow-y: auto;" id="verified-gallery-container">
-                                    <div class="empty-hint">無已確認標籤。</div>
                                 </div>
                             </div>
                         </div>

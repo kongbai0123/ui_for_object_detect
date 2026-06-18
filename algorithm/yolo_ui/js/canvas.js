@@ -508,11 +508,11 @@ const ImageLabeler = {
 
                 // 填滿 HSL 透明顏色
                 if (color.startsWith("hsl")) {
-                    this.ctx.fillStyle = isSelected 
-                        ? color.replace(")", ", 0.35)").replace("hsl", "hsla")
-                        : color.replace(")", ", 0.18)").replace("hsl", "hsla");
+                    this.ctx.fillStyle = isSelected
+                        ? color.replace(")", ", 0.5)").replace("hsl", "hsla")
+                        : color.replace(")", ", 0.36)").replace("hsl", "hsla");
                 } else {
-                    this.ctx.fillStyle = isSelected ? "rgba(0, 229, 255, 0.2)" : "rgba(0, 229, 255, 0.08)";
+                    this.ctx.fillStyle = isSelected ? "rgba(0, 229, 255, 0.44)" : "rgba(0, 229, 255, 0.32)";
                 }
                 this.ctx.fill();
 
@@ -524,8 +524,15 @@ const ImageLabeler = {
                     this.ctx.shadowBlur = 0;
                 }
 
+                this.ctx.lineJoin = "round";
+                this.ctx.lineCap = "round";
+                this.ctx.strokeStyle = "rgba(0, 0, 0, 0.78)";
+                this.ctx.lineWidth = isSelected ? 7 : 5;
+                this.ctx.setLineDash([]);
+                this.ctx.stroke();
+
                 this.ctx.strokeStyle = color;
-                this.ctx.lineWidth = isSelected ? 2.5 : 1.5;
+                this.ctx.lineWidth = isSelected ? 3.2 : 2.4;
                 this.ctx.setLineDash([]);
                 this.ctx.stroke();
 
@@ -535,11 +542,11 @@ const ImageLabeler = {
                 // 繪製標籤名稱
                 const firstPt = this.getCanvasCoordinates(box.points[0][0], box.points[0][1]);
                 this.ctx.fillStyle = color;
-                this.ctx.font = "bold 12px Outfit, sans-serif";
+                this.ctx.font = "bold 13px Outfit, sans-serif";
                 const textWidth = this.ctx.measureText(box.label).width;
-                this.ctx.fillRect(firstPt.x - 1, firstPt.y - 18, textWidth + 12, 18);
+                this.ctx.fillRect(firstPt.x - 2, firstPt.y - 22, textWidth + 16, 22);
                 this.ctx.fillStyle = "#000";
-                this.ctx.fillText(box.label, firstPt.x + 6, firstPt.y - 5);
+                this.ctx.fillText(box.label, firstPt.x + 6, firstPt.y - 7);
             } else {
                 const p1 = this.getCanvasCoordinates(box.x, box.y);
                 const p2 = this.getCanvasCoordinates(box.x + box.w, box.y + box.h);
