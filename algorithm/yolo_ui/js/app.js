@@ -75,6 +75,31 @@ const App = {
         return true;
     },
 
+    makeLabelCacheEntry(img, overrides = {}) {
+        return {
+            label: img?.label || "",
+            status: img?.status || "pending",
+            source: img?.source || "",
+            review_state: img?.review_state || "",
+            model_id: img?.model_id || "",
+            confidence: img?.confidence || "",
+            updated_at: img?.updated_at || "",
+            ...overrides
+        };
+    },
+
+    isAiPendingLabel(item) {
+        return item?.status === "ai_pending" || (item?.status === "pending" && item?.source === "auto");
+    },
+
+    getStatusText(item) {
+        if (item?.status === "done") return "已標註";
+        if (this.isAiPendingLabel(item)) return "AI 待審核";
+        if (item?.status === "pending") return "待確認";
+        if (item?.status === "ignore") return "已忽略";
+        return item?.status || "-";
+    },
+
     show(id) {
         const el = this.el(id);
         if (!el) {
@@ -507,7 +532,7 @@ const App = {
     updateSmartGuide(workspaceId, tabName) {
         const totalImgs = this.images.length;
         const doneCount = Object.values(this.labelDataCache).filter(c => c.status === "done").length;
-        const pendingCount = Object.values(this.labelDataCache).filter(c => c.status === "pending").length;
+        const pendingCount = Object.values(this.labelDataCache).filter(c => c.status === "pending" || this.isAiPendingLabel(c)).length;
         const ignoredCount = Object.values(this.labelDataCache).filter(c => c.status === "ignore").length;
         const unlabeledCount = totalImgs - doneCount - ignoredCount;
         
@@ -1049,10 +1074,11 @@ const App = {
             // 更新首頁卡片數據與狀態
             setElText("card-db-total-imgs", summary.total_images);
             
-            const unlabeledCount = summary.total_images - summary.done - summary.ignored;
+            const aiPendingCount = summary.ai_pending || 0;
+            const unlabeledCount = summary.total_images - summary.done - summary.ignored - aiPendingCount;
             setElText("card-ann-unlabeled", unlabeledCount);
             setElText("card-ann-verified", summary.done);
-            setElText("card-ann-pending", summary.ignored); // 這裡用已忽略數來做個模擬
+            setElText("card-ann-pending", aiPendingCount);
 
             // 計算並更新待審核佇列狀態
             const pendingReviewItems = this.getPendingReviewItems();
@@ -1154,10 +1180,7 @@ const App = {
             // 寫入快取與重設標記清單
             this.labelDataCache = {};
             this.images.forEach(img => {
-                this.labelDataCache[img.path] = {
-                    label: img.label,
-                    status: img.status
-                };
+                this.labelDataCache[img.path] = this.makeLabelCacheEntry(img);
             });
 
             // 更新類別標籤雲
@@ -1398,17 +1421,19 @@ const App = {
         if (this.currentImgIndex < 0) return;
         const img = this.images[this.currentImgIndex];
 
-        // 更新快取
-        this.labelDataCache[img.path].status = status;
+        // 更新快取。手動畫布產生 manual 狀態；AI 候選改走 Auto Review。
+        const current = this.labelDataCache[img.path] || this.makeLabelCacheEntry(img);
+        this.labelDataCache[img.path] = {
+            ...current,
+            status,
+            source: current.source || "manual",
+            review_state: status === "ignore" ? "rejected" : current.review_state
+        };
 
         // 更新 UI 徽章與狀態按鈕
         const badge = document.getElementById("info-status");
         badge.className = `val badge ${status}`;
-
-        let statusText = "已標註";
-        if (status === "pending") statusText = "待確認";
-        if (status === "ignore") statusText = "已忽略";
-        badge.textContent = statusText;
+        badge.textContent = this.getStatusText(this.labelDataCache[img.path]);
 
         document.getElementById("tool-ignore").classList.toggle("active", status === "ignore");
         document.getElementById("tool-pending").classList.toggle("active", status === "pending");
@@ -1420,7 +1445,7 @@ const App = {
             ImageLabeler.draw();
         }
 
-        showToast(`圖片狀態設定為: ${statusText}`, "info");
+        showToast(`圖片狀態設定為: ${badge.textContent}`, "info");
     },
 
     copyPreviousAnnotations() {
@@ -1455,12 +1480,14 @@ const App = {
     loadImgToLabelView(index) {
         if (index < 0 || index >= this.images.length) return;
 
-        // 儲存當前圖片標註至暫存
-        this.saveCurrentImgLabelToCache();
+        // 切換圖片時才保存上一張；載入同一張候選圖時不可用尚未載入的空畫布覆蓋 AI 標註。
+        if (this.currentImgIndex !== index) {
+            this.saveCurrentImgLabelToCache();
+        }
 
         this.currentImgIndex = index;
         const img = this.images[index];
-        const cache = this.labelDataCache[img.path] || { label: "", status: "pending" };
+        const cache = this.labelDataCache[img.path] || this.makeLabelCacheEntry(img);
 
         // 載入 Canvas
         ImageLabeler.loadImage(img.url, img.path, cache.label);
@@ -1475,10 +1502,7 @@ const App = {
         // 載入狀態與更新 UI 狀態徽章
         const badge = document.getElementById("info-status");
         badge.className = `val badge ${cache.status}`;
-        let statusText = "已標註";
-        if (cache.status === "pending") statusText = "待確認";
-        if (cache.status === "ignore") statusText = "已忽略";
-        badge.textContent = statusText;
+        badge.textContent = this.getStatusText(cache);
 
         // 更新左邊工具列狀態
         document.getElementById("tool-ignore").classList.toggle("active", cache.status === "ignore");
@@ -1493,18 +1517,27 @@ const App = {
         const img = this.images[this.currentImgIndex];
 
         // 如果狀態為忽略，標籤存為空
-        const status = this.labelDataCache[img.path].status;
+        const current = this.labelDataCache[img.path] || this.makeLabelCacheEntry(img);
+        const status = current.status;
         let labelStr = "";
 
         if (status !== "ignore") {
             labelStr = ImageLabeler.getLabelString();
-            // 如果畫布有框且狀態原本是 pending，自動升級為 done
-            if (labelStr && status === "pending") {
-                this.labelDataCache[img.path].status = "done";
+            // 手動畫布只把一般 pending 升級為正式 manual；AI 候選必須走 Auto Review。
+            if (labelStr && status === "pending" && !this.isAiPendingLabel(current)) {
+                this.labelDataCache[img.path] = {
+                    ...current,
+                    status: "done",
+                    source: "manual",
+                    review_state: ""
+                };
             }
         }
 
-        this.labelDataCache[img.path].label = labelStr;
+        this.labelDataCache[img.path] = {
+            ...(this.labelDataCache[img.path] || current),
+            label: labelStr
+        };
     },
 
     updateClassSelectorList() {
@@ -2249,7 +2282,7 @@ names:
         let done = 0, pending = 0, ignored = 0;
         Object.values(this.labelDataCache).forEach(c => {
             if (c.status === "done") done++;
-            else if (c.status === "pending") pending++;
+            else if (c.status === "pending" || this.isAiPendingLabel(c)) pending++;
             else if (c.status === "ignore") ignored++;
         });
 
@@ -2640,6 +2673,15 @@ names:
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     },
 
+    isLabelEditorActive() {
+        const activeView = document.querySelector(".app-view.active")?.id;
+        if (activeView === "label-view") return true;
+        if (activeView !== "annotation-view") return false;
+
+        const manualTab = document.querySelector('#annotation-view .workspace-tab-content[data-tab-content="ann-manual"]');
+        return !!manualTab && manualTab.style.display !== "none";
+    },
+
     // ==========================================================================
     // 04. 快捷鍵與輔助
     // ==========================================================================
@@ -2651,11 +2693,39 @@ names:
             }
 
             const key = e.key.toLowerCase();
+            const isLabelEditorActive = this.isLabelEditorActive();
+
+            if (isLabelEditorActive && this.reviewMode) {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    this.acceptCurrentReviewLabel();
+                    return;
+                }
+                if (key === "x") {
+                    e.preventDefault();
+                    this.ignoreCurrentReviewImage();
+                    return;
+                }
+                if (key === "a" || e.key === "ArrowLeft") {
+                    e.preventDefault();
+                    this.navigateReviewCandidate(-1);
+                    return;
+                }
+                if (key === "d" || e.key === "ArrowRight") {
+                    e.preventDefault();
+                    this.navigateReviewCandidate(1);
+                    return;
+                }
+                if ((e.ctrlKey || e.metaKey) && key === "s") {
+                    e.preventDefault();
+                    this.saveReviewAndNext();
+                    return;
+                }
+            }
 
             // A / ArrowLeft = 上一張
             if (key === "a" || e.key === "ArrowLeft") {
-                const activeView = document.querySelector(".app-view.active").id;
-                if (activeView === "label-view") {
+                if (isLabelEditorActive) {
                     e.preventDefault();
                     this.navigateImages(-1);
                 }
@@ -2663,8 +2733,7 @@ names:
 
             // D / ArrowRight = 下一張
             if (key === "d" || e.key === "ArrowRight") {
-                const activeView = document.querySelector(".app-view.active").id;
-                if (activeView === "label-view") {
+                if (isLabelEditorActive) {
                     e.preventDefault();
                     this.navigateImages(1);
                 }
@@ -2672,40 +2741,35 @@ names:
 
             // R = 矩形標註
             if (key === "r") {
-                const activeView = document.querySelector(".app-view.active").id;
-                if (activeView === "label-view") {
+                if (isLabelEditorActive) {
                     this.setLabelToolMode("draw");
                 }
             }
 
             // P = 多邊形標註
             if (key === "p") {
-                const activeView = document.querySelector(".app-view.active").id;
-                if (activeView === "label-view") {
+                if (isLabelEditorActive) {
                     this.setLabelToolMode("polygon");
                 }
             }
 
             // H = 選擇模式
             if (key === "h") {
-                const activeView = document.querySelector(".app-view.active").id;
-                if (activeView === "label-view") {
+                if (isLabelEditorActive) {
                     this.setLabelToolMode("select");
                 }
             }
 
             // Delete = 刪除選中框
             if (e.key === "Delete") {
-                const activeView = document.querySelector(".app-view.active").id;
-                if (activeView === "label-view") {
+                if (isLabelEditorActive) {
                     ImageLabeler.deleteSelectedBox();
                 }
             }
 
             // Ctrl + S = 儲存標籤
             if ((e.ctrlKey || e.metaKey) && key === "s") {
-                const activeView = document.querySelector(".app-view.active").id;
-                if (activeView === "label-view") {
+                if (isLabelEditorActive) {
                     e.preventDefault();
                     this.saveAllLabelsToBackend();
                 }
@@ -3435,7 +3499,7 @@ names:
 
             card.innerHTML = `
                 <img src="${API_BASE}${img.thumb_url || img.url}" loading="lazy">
-                <span class="status-badge ${img.status}">${img.status === 'done' ? '已標註' : (img.status === 'pending' ? '待確認' : '已忽略')}</span>
+                <span class="status-badge ${img.status}">${this.getStatusText(img)}</span>
                 <div class="gallery-card-info">
                     <span>${img.path.split('/').pop()}</span>
                     <strong style="color: var(--neon-blue);">${labelText}</strong>
@@ -4441,9 +4505,9 @@ names:
         const container = document.getElementById("review-gallery-container");
         if (!container) return;
 
-        // review 渲染 status === "pending" 且有 label 的圖片
+        // review 渲染 AI 候選標註
         const items = (this.images || []).filter(img => {
-            return img.status === "pending" && img.label && img.label !== "[]" && img.label !== "";
+            return this.isAiPendingLabel(img) && img.label && img.label !== "[]" && img.label !== "";
         });
 
         this.renderMiniGallery(container, items, "無待審核的候選標籤。");
@@ -4506,7 +4570,7 @@ names:
             card.innerHTML = `
                 <div class="gallery-card-img-wrapper" style="position: relative; aspect-ratio: 4/3; background: var(--bg-dark); border-radius: 6px; overflow: hidden;">
                     <img src="${imgUrl}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;">
-                    <span class="status-badge ${img.status}" style="position: absolute; top: 6px; right: 6px; font-size: 10px; padding: 2px 6px; border-radius: 4px;">${img.status === 'done' ? '已標註' : (img.status === 'pending' ? '待確認' : '已忽略')}</span>
+                    <span class="status-badge ${img.status}" style="position: absolute; top: 6px; right: 6px; font-size: 10px; padding: 2px 6px; border-radius: 4px;">${this.getStatusText(img)}</span>
                 </div>
                 <div class="gallery-card-info" style="padding: 8px 4px;">
                     <span style="font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary);">${img.path.split('/').pop().split('\\').pop()}</span>
@@ -4858,7 +4922,7 @@ names:
 
     getPendingReviewItems() {
         return (this.images || []).filter(img => {
-            return img.status === "pending" && this.hasValidBoxes(img.label);
+            return this.isAiPendingLabel(img) && this.hasValidBoxes(img.label);
         });
     },
 
@@ -4881,8 +4945,6 @@ names:
             showToast("找不到候選圖片索引，請重新掃描資料庫。", "error");
             return;
         }
-
-        this.currentImgIndex = masterIndex;
 
         // 進入標註主畫布
         this.switchView("label-view");
@@ -4931,10 +4993,15 @@ names:
             return;
         }
 
-        this.labelDataCache[img.path] = {
+        const original = this.labelDataCache[img.path]?.label || img.label || "";
+        const edited = labelStr !== original;
+        this.labelDataCache[img.path] = this.makeLabelCacheEntry(img, {
             label: labelStr,
-            status: "done"
-        };
+            status: "done",
+            source: edited ? "auto_edited" : "auto_accepted",
+            review_state: edited ? "edited" : "accepted"
+        });
+        Object.assign(img, this.labelDataCache[img.path]);
 
         try {
             await API.saveLabels(this.labelDataCache);
@@ -4958,10 +5025,13 @@ names:
             const confirmEmpty = confirm("目前沒有任何標註框，是否將此圖片保持 pending 並跳到下一張？");
             if (!confirmEmpty) return;
         } else {
-            this.labelDataCache[img.path] = {
+            this.labelDataCache[img.path] = this.makeLabelCacheEntry(img, {
                 label: labelStr,
-                status: "done"
-            };
+                status: "done",
+                source: "auto_edited",
+                review_state: "edited"
+            });
+            Object.assign(img, this.labelDataCache[img.path]);
 
             try {
                 await API.saveLabels(this.labelDataCache);
@@ -4978,10 +5048,13 @@ names:
         if (this.currentImgIndex < 0) return;
         const img = this.images[this.currentImgIndex];
 
-        this.labelDataCache[img.path] = {
+        this.labelDataCache[img.path] = this.makeLabelCacheEntry(img, {
             label: "",
-            status: "ignore"
-        };
+            status: "ignore",
+            source: "auto_rejected",
+            review_state: "rejected"
+        });
+        Object.assign(img, this.labelDataCache[img.path]);
 
         try {
             await API.saveLabels(this.labelDataCache);
@@ -4990,6 +5063,23 @@ names:
         } catch (err) {
             showToast(`忽略失敗: ${err.message}`, "error");
         }
+    },
+
+    navigateReviewCandidate(direction) {
+        if (!this.reviewMode || this.reviewQueue.length === 0) return;
+        this.currentReviewIndex += direction;
+        if (this.currentReviewIndex < 0) this.currentReviewIndex = this.reviewQueue.length - 1;
+        if (this.currentReviewIndex >= this.reviewQueue.length) this.currentReviewIndex = 0;
+
+        const target = this.reviewQueue[this.currentReviewIndex];
+        const masterIndex = this.masterImageIndexLookup(target.path);
+        if (masterIndex === -1) {
+            showToast("找不到候選圖片索引，請重新掃描資料庫。", "error");
+            return;
+        }
+
+        this.loadImgToLabelView(masterIndex);
+        this.updateReviewProgressText();
     },
 
     gotoNextReviewCandidate() {

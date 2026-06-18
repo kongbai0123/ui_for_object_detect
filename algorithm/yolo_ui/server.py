@@ -21,6 +21,67 @@ from PIL import Image, ImageOps
 import hashlib
 
 VALID_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+LABEL_FIELDNAMES = [
+    "image_path",
+    "label",
+    "status",
+    "source",
+    "review_state",
+    "model_id",
+    "confidence",
+    "updated_at",
+]
+TRAINABLE_STATUSES = {"done"}
+TRAINABLE_SOURCES = {"manual", "auto_accepted", "auto_edited", ""}
+
+
+def now_label_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def normalize_label_path(path_value: str) -> str:
+    return (path_value or "").replace("\\", "/").lstrip("/")
+
+
+def resolve_label_image_path(path_value: str, known_images: List[str]) -> str:
+    normalized = normalize_label_path(path_value)
+    if not normalized or normalized in known_images:
+        return normalized
+
+    by_name = [img for img in known_images if Path(img).name == Path(normalized).name]
+    if len(by_name) == 1:
+        return by_name[0]
+    return normalized
+
+
+def normalize_label_row(row: Dict, known_images: Optional[List[str]] = None) -> Dict:
+    image_path = normalize_label_path(row.get("image_path", ""))
+    if known_images is not None:
+        image_path = resolve_label_image_path(image_path, known_images)
+
+    status = row.get("status", "done") or "done"
+    source = row.get("source", "")
+    if not source:
+        source = "manual" if status in {"done", "verified"} else ""
+
+    return {
+        "image_path": image_path,
+        "label": row.get("label", ""),
+        "status": status,
+        "source": source,
+        "review_state": row.get("review_state", ""),
+        "model_id": row.get("model_id", ""),
+        "confidence": row.get("confidence", ""),
+        "updated_at": row.get("updated_at", ""),
+    }
+
+
+def is_trainable_label(info: Dict) -> bool:
+    return (
+        info.get("status") in TRAINABLE_STATUSES
+        and info.get("source", "") in TRAINABLE_SOURCES
+        and info.get("label", "") not in {"", "[]"}
+    )
 
 
 app = FastAPI(title="YOLO UI Backend API", version="1.0.0")
@@ -471,18 +532,25 @@ def scan_data():
             with open(csv_file, "r", encoding="utf-8", newline="") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    img_path = row.get("image_path")
-                    label_val = row.get("label", "")
-                    status = row.get("status", "done")
+                    normalized_row = normalize_label_row(row, images)
+                    img_path = normalized_row.get("image_path")
                     if img_path:
-                        labels[img_path] = {"label": label_val, "status": status}
+                        labels[img_path] = {
+                            "label": normalized_row.get("label", ""),
+                            "status": normalized_row.get("status", "done"),
+                            "source": normalized_row.get("source", ""),
+                            "review_state": normalized_row.get("review_state", ""),
+                            "model_id": normalized_row.get("model_id", ""),
+                            "confidence": normalized_row.get("confidence", ""),
+                            "updated_at": normalized_row.get("updated_at", ""),
+                        }
         except Exception as e:
             print(f"讀取 labels.csv 出錯: {e}")
             
     # 合併掃描結果
     image_list = []
     for img in images:
-        lbl_info = labels.get(img, {"label": "", "status": "pending"})
+        lbl_info = labels.get(img, {"label": "", "status": "pending", "source": "", "review_state": ""})
         # 獲取縮圖 URL，若無快取縮圖則退回到原圖
         thumb = make_thumb(input_dir, img)
         image_list.append({
@@ -490,14 +558,20 @@ def scan_data():
             "url": f"/images/{img}",
             "thumb_url": thumb if thumb else f"/images/{img}",
             "label": lbl_info["label"],
-            "status": lbl_info["status"]
+            "status": lbl_info["status"],
+            "source": lbl_info.get("source", ""),
+            "review_state": lbl_info.get("review_state", ""),
+            "model_id": lbl_info.get("model_id", ""),
+            "confidence": lbl_info.get("confidence", ""),
+            "updated_at": lbl_info.get("updated_at", ""),
         })
         
     # 計算統計摘要
     total = len(image_list)
     done_count = sum(1 for x in image_list if x["status"] == "done")
-    pending_count = sum(1 for x in image_list if x["status"] == "pending")
+    pending_count = sum(1 for x in image_list if x["status"] in {"pending", "ai_pending"})
     ignore_count = sum(1 for x in image_list if x["status"] == "ignore")
+    ai_pending_count = sum(1 for x in image_list if x["status"] == "ai_pending")
     
     return {
         "images": image_list,
@@ -505,6 +579,7 @@ def scan_data():
             "total_images": total,
             "done": done_count,
             "pending": pending_count,
+            "ai_pending": ai_pending_count,
             "ignored": ignore_count,
             "classes": active_project["classes"]
         }
@@ -603,16 +678,15 @@ def save_labels(payload: Dict):
     # 儲存為 csv 格式
     try:
         with open(csv_file, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["image_path", "label", "status"])
+            writer = csv.DictWriter(f, fieldnames=LABEL_FIELDNAMES)
             writer.writeheader()
             for img_path, info in payload.items():
-                lbl = info.get("label", "")
-                status = info.get("status", "done")
-                writer.writerow({
+                row = normalize_label_row({
+                    **info,
                     "image_path": img_path,
-                    "label": lbl,
-                    "status": status
+                    "updated_at": info.get("updated_at") or now_label_timestamp(),
                 })
+                writer.writerow({field: row.get(field, "") for field in LABEL_FIELDNAMES})
         return {"status": "success", "message": "標籤已儲存"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"無法儲存標籤: {str(e)}")
@@ -1316,6 +1390,7 @@ def dataset_check():
                     
     labeled_images = 0
     empty_images = 0
+    ai_pending_images = 0
     class_distribution = {}
     labels = {}
     
@@ -1325,7 +1400,17 @@ def dataset_check():
             with open(csv_file, "r", encoding="utf-8", newline="") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    label_val = row.get("label", "").strip()
+                    normalized_row = normalize_label_row(row)
+                    label_val = normalized_row.get("label", "").strip()
+                    if normalized_row.get("status") == "ai_pending":
+                        ai_pending_images += 1
+                        continue
+                    if normalized_row.get("status") == "ignore":
+                        empty_images += 1
+                        continue
+                    if not is_trainable_label(normalized_row):
+                        empty_images += 1
+                        continue
                     if label_val:
                         if label_val.startswith("["):
                             try:
@@ -1365,6 +1450,7 @@ def dataset_check():
         "health_score": health_score,
         "total_images": total_images,
         "labeled_images": labeled_images,
+        "ai_pending_images": ai_pending_images,
         "empty_images": empty_images,
         "broken_images": broken_images,
         "class_distribution": class_distribution,
@@ -1404,8 +1490,11 @@ def dataset_split(req: SplitRequest):
             with open(csv_file, "r", encoding="utf-8", newline="") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    image_path = row.get("image_path", "")
-                    label_val = row.get("label", "")
+                    normalized_row = normalize_label_row(row, images)
+                    if not is_trainable_label(normalized_row):
+                        continue
+                    image_path = normalized_row.get("image_path", "")
+                    label_val = normalized_row.get("label", "")
                     if image_path:
                         labels_list = []
                         label_str = label_val.strip()
@@ -1424,6 +1513,13 @@ def dataset_split(req: SplitRequest):
                         label_map[image_path] = labels_list
         except Exception as e:
             print(f"Error reading labels.csv during split: {e}")
+
+    images = [img for img in images if img in label_map]
+    if len(images) == 0:
+        return {
+            "status": "error",
+            "message": "沒有已確認且可訓練的標註資料。AI 候選標註需先完成審核。"
+        }
 
     # 2. 定義群組規則 (Group Key)
     def get_group_key(rel_path: str) -> str:
@@ -1589,13 +1685,17 @@ def load_label_map(input_dir: Path) -> Dict[str, str]:
     if not csv_file.exists():
         return labels
 
+    known_images = get_project_images(input_dir)
     try:
         import csv
         with open(csv_file, "r", encoding="utf-8", newline="") as f:
             for row in csv.DictReader(f):
-                image_path = row.get("image_path", "")
+                normalized_row = normalize_label_row(row, known_images)
+                if not is_trainable_label(normalized_row):
+                    continue
+                image_path = normalized_row.get("image_path", "")
                 if image_path:
-                    labels[image_path] = row.get("label", "")
+                    labels[image_path] = normalized_row.get("label", "")
     except Exception as e:
         print(f"Error reading labels.csv for export: {e}")
     return labels
@@ -1614,6 +1714,17 @@ def label_to_yolo_lines(label_value: str, class_names: List[str]) -> List[str]:
                 if label not in class_names:
                     class_names.append(label)
                 class_id = class_names.index(label)
+                if box.get("type") == "polygon" or box.get("points"):
+                    points = box.get("points") or []
+                    flat_points = []
+                    for pt in points:
+                        if len(pt) >= 2:
+                            flat_points.extend([float(pt[0]), float(pt[1])])
+                    if len(flat_points) >= 6:
+                        coords = " ".join(f"{v:.6f}" for v in flat_points)
+                        lines.append(f"{class_id} {coords}")
+                    continue
+
                 x = float(box.get("x", 0.5))
                 y = float(box.get("y", 0.5))
                 w = float(box.get("w", 1.0))
@@ -1662,6 +1773,9 @@ def export_dataset():
         shutil.rmtree(export_dir)
 
     label_map = load_label_map(input_dir)
+    for split_name in ["train", "val", "test"]:
+        split_data[split_name] = [rel_path for rel_path in split_data.get(split_name, []) if rel_path in label_map]
+
     class_names = list(active_project.get("classes") or [])
     counts = {}
 
@@ -1964,10 +2078,8 @@ def merge_and_save_labels(target_dir: Path, label_cache: dict):
             with open(csv_file, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    existing_cache[row["image_path"]] = {
-                        "label": row["label"],
-                        "status": row["status"]
-                    }
+                    normalized_row = normalize_label_row(row)
+                    existing_cache[normalized_row["image_path"]] = normalized_row
         except Exception as e:
             print(f"[AUTOLABEL] 讀取現有 labels.csv 失敗: {e}")
             
@@ -1989,13 +2101,14 @@ def merge_and_save_labels(target_dir: Path, label_cache: dict):
         import csv
         with open(csv_file, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["image_path", "label", "status"])
+            writer.writerow(LABEL_FIELDNAMES)
             for img_path, data in existing_cache.items():
-                writer.writerow([
-                    img_path,
-                    data.get("label", "[]"),
-                    data.get("status", "pending")
-                ])
+                row = normalize_label_row({
+                    **data,
+                    "image_path": img_path,
+                    "updated_at": data.get("updated_at") or now_label_timestamp(),
+                })
+                writer.writerow([row.get(field, "") for field in LABEL_FIELDNAMES])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"儲存自動標註 CSV 失敗: {str(e)}")
 
@@ -2124,7 +2237,12 @@ def run_auto_label_worker(task_id: str, payload: AutoLabelPayload):
 
         label_cache[rel_path] = {
             "label": json.dumps(boxes_json, ensure_ascii=False),
-            "status": "pending"
+            "status": "ai_pending",
+            "source": "auto",
+            "review_state": "pending",
+            "model_id": str(model_ref),
+            "confidence": str(payload.confidence),
+            "updated_at": now_label_timestamp(),
         }
 
         task["current_predictions"] = boxes_json
